@@ -6,14 +6,14 @@ pub(crate) enum Buffers {
 }
 
 impl Buffers {
-    pub(crate) fn push_data(&mut self, event: IncomingDataEvent<'_>) {
+    pub(crate) fn recv_data(&mut self, event: IncomingDataEvent<'_>) {
         match self {
-            Buffers::Tcp(tcp_buf) => tcp_buf.push_data(event),
-            Buffers::Udp(udp_buf) => udp_buf.push_data(event),
+            Buffers::Tcp(tcp_buf) => tcp_buf.recv_data(event),
+            Buffers::Udp(udp_buf) => udp_buf.recv_data(event),
         }
     }
 
-    pub(crate) fn write_data<F>(&mut self, direction: OutgoingDirection, mut write_fn: F)
+    pub(crate) fn consume_data<F>(&mut self, direction: OutgoingDirection, mut write_fn: F)
     where
         F: FnMut(&[u8]) -> crate::Result<usize>,
     {
@@ -104,15 +104,13 @@ impl TcpBuffers {
         buffer.drain(0..size);
     }
 
-    pub(crate) fn push_data(&mut self, event: IncomingDataEvent<'_>) {
-        let direction = event.direction;
-        let buffer = event.buffer;
-        match direction {
+    pub(crate) fn recv_data(&mut self, event: IncomingDataEvent<'_>) {
+        match event.direction {
             IncomingDirection::FromServer => {
-                self.client_buf.extend(buffer.iter());
+                self.client_buf.extend(event.buffer.iter());
             }
             IncomingDirection::FromClient => {
-                self.server_buf.extend(buffer.iter());
+                self.server_buf.extend(event.buffer.iter());
             }
         }
     }
@@ -126,8 +124,8 @@ pub(crate) struct UdpBuffers {
 impl UdpBuffers {
     pub(crate) fn new() -> UdpBuffers {
         UdpBuffers {
-            client_buf: Default::default(),
-            server_buf: Default::default(),
+            client_buf: VecDeque::default(),
+            server_buf: VecDeque::default(),
         }
     }
 
@@ -147,12 +145,10 @@ impl UdpBuffers {
         buffer.drain(0..size);
     }
 
-    pub(crate) fn push_data(&mut self, event: IncomingDataEvent<'_>) {
-        let direction = event.direction;
-        let buffer = event.buffer;
-        match direction {
-            IncomingDirection::FromServer => self.client_buf.push_back(buffer.to_vec()),
-            IncomingDirection::FromClient => self.server_buf.push_back(buffer.to_vec()),
+    pub(crate) fn recv_data(&mut self, event: IncomingDataEvent<'_>) {
+        match event.direction {
+            IncomingDirection::FromServer => self.client_buf.push_back(event.buffer.to_vec()),
+            IncomingDirection::FromClient => self.server_buf.push_back(event.buffer.to_vec()),
         }
     }
 }

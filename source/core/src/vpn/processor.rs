@@ -218,7 +218,7 @@ impl<'a> Processor<'a> {
                                 direction: IncomingDirection::FromServer,
                                 buffer: &bytes[..],
                             };
-                            session.buffers.push_data(event);
+                            session.buffers.recv_data(event);
                         }
                     }
                     is_closed
@@ -248,7 +248,7 @@ impl<'a> Processor<'a> {
 
             session
                 .buffers
-                .write_data(OutgoingDirection::ToServer, |b| session.mio_socket.write(b).map_err(|e| e.into()));
+                .consume_data(OutgoingDirection::ToServer, |b| session.mio_socket.write(b).map_err(|e| e.into()));
 
             log::trace!("finished write to server, session={:?}", session_info);
         }
@@ -270,7 +270,7 @@ impl<'a> Processor<'a> {
                             direction: IncomingDirection::FromClient,
                             buffer: &data[..data_len],
                         };
-                        session.buffers.push_data(event);
+                        session.buffers.recv_data(event);
                     }
                     Err(error) => {
                         log::error!("failed to receive from smoltcp, error={:?}", error);
@@ -289,7 +289,7 @@ impl<'a> Processor<'a> {
 
             let mut socket = session.smoltcp_socket.get(&mut session.sockets);
             if socket.can_send() {
-                session.buffers.write_data(OutgoingDirection::ToClient, |b| socket.send(b));
+                session.buffers.consume_data(OutgoingDirection::ToClient, |b| socket.send(b));
             }
 
             log::trace!("finished write to smoltcp, session={:?}", session_info);
