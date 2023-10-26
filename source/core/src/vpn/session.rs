@@ -1,8 +1,8 @@
 use crate::vpn::{
     buffers::{Buffers, TcpBuffers, UdpBuffers},
-    mio_socket::{InternetProtocol as MioInternetProtocol, Socket as MioSocket, TransportProtocol as MioTransportProtocol},
-    session_info::{InternetProtocol, SessionInfo, TransportProtocol},
-    smoltcp_socket::{Socket as SmoltcpSocket, TransportProtocol as SmoltcpProtocol},
+    mio_socket::Socket as MioSocket,
+    session_info::{SessionInfo, TransportProtocol},
+    smoltcp_socket::Socket as SmoltcpSocket,
     vpn_device::VpnDevice,
 };
 use mio::{Poll, Token};
@@ -42,26 +42,11 @@ impl<'a> Session<'a> {
     }
 
     fn create_smoltcp_socket(session_info: &SessionInfo, sockets: &mut SocketSet<'_>) -> Option<SmoltcpSocket> {
-        let transport_protocol = match session_info.transport_protocol {
-            TransportProtocol::Tcp => SmoltcpProtocol::Tcp,
-            TransportProtocol::Udp => SmoltcpProtocol::Udp,
-        };
-
-        SmoltcpSocket::new(transport_protocol, session_info.source, session_info.destination, sockets)
+        SmoltcpSocket::new(session_info.transport_protocol, session_info.source, session_info.destination, sockets)
     }
 
     fn create_mio_socket(session_info: &SessionInfo, poll: &mut Poll, token: Token) -> Option<MioSocket> {
-        let transport_protocol = match session_info.transport_protocol {
-            TransportProtocol::Tcp => MioTransportProtocol::Tcp,
-            TransportProtocol::Udp => MioTransportProtocol::Udp,
-        };
-
-        let internet_protocol = match session_info.internet_protocol {
-            InternetProtocol::Ipv4 => MioInternetProtocol::Ipv4,
-            InternetProtocol::Ipv6 => MioInternetProtocol::Ipv6,
-        };
-
-        let mut mio_socket = MioSocket::new(transport_protocol, internet_protocol, session_info.destination)?;
+        let mut mio_socket = MioSocket::new(session_info.transport_protocol, session_info.internet_protocol, session_info.destination)?;
 
         if let Err(error) = mio_socket.register_poll(poll, token) {
             log::error!("failed to register poll, error={:?}", error);

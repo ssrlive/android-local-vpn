@@ -1,14 +1,10 @@
+use crate::vpn::session_info::TransportProtocol;
 use smoltcp::{
     iface::{SocketHandle, SocketSet},
     socket::{tcp, udp},
     wire::IpEndpoint,
 };
 use std::net::SocketAddr;
-
-pub(crate) enum TransportProtocol {
-    Tcp,
-    Udp,
-}
 
 pub(crate) struct Socket {
     socket_handle: SocketHandle,

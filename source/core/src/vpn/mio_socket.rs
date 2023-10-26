@@ -1,4 +1,7 @@
-use crate::tun_callbacks::on_socket_created;
+use crate::{
+    tun_callbacks::on_socket_created,
+    vpn::session_info::{InternetProtocol, TransportProtocol},
+};
 use mio::{
     net::{TcpStream, UdpSocket},
     Interest, Poll, Token,
@@ -8,16 +11,6 @@ use std::{
     net::{Shutdown, SocketAddr},
     os::unix::io::{AsRawFd, FromRawFd},
 };
-
-pub(crate) enum TransportProtocol {
-    Tcp,
-    Udp,
-}
-
-pub(crate) enum InternetProtocol {
-    Ipv4,
-    Ipv6,
-}
 
 pub(crate) struct Socket {
     _socket: socket2::Socket, // Need to retain so socket does not get closed.
