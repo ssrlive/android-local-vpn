@@ -1,7 +1,7 @@
 use smoltcp::wire::{IpProtocol, Ipv4Packet, Ipv6Packet, TcpPacket, UdpPacket};
 use std::{fmt, hash::Hash, net::SocketAddr};
 
-#[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
+#[derive(PartialEq, Eq, Hash, Debug, Clone, Copy, PartialOrd, Ord)]
 pub(crate) struct SessionInfo {
     pub(crate) source: SocketAddr,
     pub(crate) destination: SocketAddr,
@@ -9,14 +9,16 @@ pub(crate) struct SessionInfo {
     pub(crate) internet_protocol: InternetProtocol,
 }
 
-#[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
+#[derive(PartialEq, Eq, Hash, Debug, Clone, Copy, PartialOrd, Ord, Default)]
 pub(crate) enum TransportProtocol {
+    #[default]
     Tcp,
     Udp,
 }
 
-#[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
+#[derive(PartialEq, Eq, Hash, Debug, Clone, Copy, PartialOrd, Ord, Default)]
 pub(crate) enum InternetProtocol {
+    #[default]
     Ipv4,
     Ipv6,
 }
