@@ -81,7 +81,7 @@ impl<'a> Processor<'a> {
         let token = self.generate_new_token();
         match self.sessions.entry(session_info) {
             Entry::Vacant(entry) => {
-                if let Some(session) = Session::new(&session_info, &mut self.poll, token) {
+                if let Ok(session) = Session::new(&session_info, &mut self.poll, token) {
                     self.tokens_to_sessions.insert(token, session_info);
 
                     entry.insert(session);
@@ -106,7 +106,7 @@ impl<'a> Processor<'a> {
         self.write_to_tun(session_info);
 
         if let Some(session) = self.sessions.get_mut(session_info) {
-            let mut smoltcp_socket = session.smoltcp_socket.get(&mut session.sockets);
+            let mut smoltcp_socket = session.smoltcp_socket.get(&mut session.sockets).unwrap();
             smoltcp_socket.close();
 
             let mio_socket = &mut session.mio_socket;
@@ -265,7 +265,7 @@ impl<'a> Processor<'a> {
 
             let mut data: [u8; 65535] = [0; 65535];
             loop {
-                let mut socket = session.smoltcp_socket.get(&mut session.sockets);
+                let mut socket = session.smoltcp_socket.get(&mut session.sockets).unwrap();
                 if !socket.can_receive() {
                     break;
                 }
@@ -292,7 +292,7 @@ impl<'a> Processor<'a> {
         if let Some(session) = self.sessions.get_mut(session_info) {
             log::trace!("write to smoltcp, session={:?}", session_info);
 
-            let mut socket = session.smoltcp_socket.get(&mut session.sockets);
+            let mut socket = session.smoltcp_socket.get(&mut session.sockets).unwrap();
             if socket.can_send() {
                 session.buffers.consume_data(OutgoingDirection::ToClient, |b| socket.send(b));
             }

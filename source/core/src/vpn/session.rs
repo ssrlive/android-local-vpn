@@ -23,30 +23,29 @@ pub(crate) struct Session<'a> {
 }
 
 impl<'a> Session<'a> {
-    pub(crate) fn new(session_info: &SessionInfo, poll: &mut Poll, token: Token) -> Option<Session<'a>> {
+    pub(crate) fn new(session_info: &SessionInfo, poll: &mut Poll, token: Token) -> crate::Result<Session<'a>> {
         let mut device = VpnDevice::new();
-        let interface = Self::create_interface(&mut device);
         let mut sockets = SocketSet::new([]);
 
         let session = Session {
             smoltcp_socket: Self::create_smoltcp_socket(session_info, &mut sockets)?,
-            mio_socket: Self::create_mio_socket(session_info, poll, token).unwrap(),
+            mio_socket: Self::create_mio_socket(session_info, poll, token)?,
             token,
-            buffers: Self::create_buffer(session_info),
-            interface,
+            buffers: Self::create_buffer(session_info)?,
+            interface: Self::create_interface(&mut device)?,
             sockets,
             device,
         };
 
-        Some(session)
+        Ok(session)
     }
 
-    fn create_smoltcp_socket(session_info: &SessionInfo, sockets: &mut SocketSet<'_>) -> Option<SmoltcpSocket> {
-        SmoltcpSocket::new(session_info.ip_protocol, session_info.source, session_info.destination, sockets)
+    fn create_smoltcp_socket(info: &SessionInfo, sockets: &mut SocketSet<'_>) -> crate::Result<SmoltcpSocket> {
+        SmoltcpSocket::new(info.ip_protocol, info.source, info.destination, sockets)
     }
 
-    fn create_mio_socket(session_info: &SessionInfo, poll: &mut Poll, token: Token) -> std::io::Result<MioSocket> {
-        let mut mio_socket = MioSocket::new(session_info.ip_protocol, session_info.ip_version, session_info.destination)?;
+    fn create_mio_socket(info: &SessionInfo, poll: &mut Poll, token: Token) -> std::io::Result<MioSocket> {
+        let mut mio_socket = MioSocket::new(info.ip_protocol, info.ip_version, info.destination)?;
 
         if let Err(error) = mio_socket.register_poll(poll, token) {
             log::error!("failed to register poll, error={:?}", error);
@@ -56,7 +55,7 @@ impl<'a> Session<'a> {
         Ok(mio_socket)
     }
 
-    fn create_interface<D>(device: &mut D) -> Interface
+    fn create_interface<D>(device: &mut D) -> crate::Result<Interface>
     where
         D: ::smoltcp::phy::Device + ?Sized,
     {
@@ -68,19 +67,16 @@ impl<'a> Session<'a> {
         interface.update_ip_addrs(|ip_addrs| {
             ip_addrs.push(IpCidr::new(IpAddress::v4(0, 0, 0, 1), 0)).unwrap();
         });
-        interface.routes_mut().add_default_ipv4_route(default_gateway_ipv4).unwrap();
+        interface.routes_mut().add_default_ipv4_route(default_gateway_ipv4)?;
 
-        interface
+        Ok(interface)
     }
 
-    fn create_buffer(session_info: &SessionInfo) -> Buffers {
+    fn create_buffer(session_info: &SessionInfo) -> crate::Result<Buffers> {
         match session_info.ip_protocol {
-            IpProtocol::Tcp => Buffers::Tcp(TcpBuffers::new()),
-            IpProtocol::Udp => Buffers::Udp(UdpBuffers::new()),
-            _ => {
-                log::error!("unsupported transport protocol, protocol={:?}", session_info.ip_protocol);
-                panic!();
-            }
+            IpProtocol::Tcp => Ok(Buffers::Tcp(TcpBuffers::new())),
+            IpProtocol::Udp => Ok(Buffers::Udp(UdpBuffers::new())),
+            _ => Err(crate::Error::UnsupportedProtocol(session_info.ip_protocol)),
         }
     }
 }

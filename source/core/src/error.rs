@@ -18,6 +18,15 @@ pub enum Error {
     #[error("smoltcp::wire::Error {0:?}")]
     Wire(#[from] smoltcp::wire::Error),
 
+    #[error("smoltcp::iface::RouteTableFull {0:?}")]
+    RouteTableFull(#[from] smoltcp::iface::RouteTableFull),
+
+    #[error("smoltcp::socket::udp::BindError {0:?}")]
+    UdpBind(#[from] smoltcp::socket::udp::BindError),
+
+    #[error("smoltcp::socket::tcp::ListenError {0:?}")]
+    TcpListen(#[from] smoltcp::socket::tcp::ListenError),
+
     #[error("smoltcp::wire::IpProtocol {0}")]
     UnsupportedProtocol(smoltcp::wire::IpProtocol),
 

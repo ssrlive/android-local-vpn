@@ -12,24 +12,21 @@ pub(crate) struct Socket {
 }
 
 impl Socket {
-    pub(crate) fn new(ip_protocol: IpProtocol, local_address: SocketAddr, remote_address: SocketAddr, sockets: &mut SocketSet<'_>) -> Option<Socket> {
+    pub(crate) fn new(ip_protocol: IpProtocol, local_address: SocketAddr, remote_address: SocketAddr, sockets: &mut SocketSet<'_>) -> crate::Result<Socket> {
         let local_endpoint = IpEndpoint::from(local_address);
 
         let remote_endpoint = IpEndpoint::from(remote_address);
 
         let socket_handle = match ip_protocol {
             IpProtocol::Tcp => {
-                let socket = Self::create_tcp_socket(remote_endpoint).unwrap();
+                let socket = Self::create_tcp_socket(remote_endpoint)?;
                 sockets.add(socket)
             }
             IpProtocol::Udp => {
-                let socket = Self::create_udp_socket(remote_endpoint).unwrap();
+                let socket = Self::create_udp_socket(remote_endpoint)?;
                 sockets.add(socket)
             }
-            _ => {
-                log::error!("unsupported transport protocol, protocol={:?}", ip_protocol);
-                return None;
-            }
+            _ => return Err(crate::Error::UnsupportedProtocol(ip_protocol)),
         };
 
         let socket = Socket {
@@ -38,37 +35,26 @@ impl Socket {
             local_endpoint,
         };
 
-        Some(socket)
+        Ok(socket)
     }
 
-    fn create_tcp_socket<'a>(endpoint: IpEndpoint) -> Option<tcp::Socket<'a>> {
+    fn create_tcp_socket<'a>(endpoint: IpEndpoint) -> crate::Result<tcp::Socket<'a>> {
         let mut socket = tcp::Socket::new(tcp::SocketBuffer::new(vec![0; 1024 * 1024]), tcp::SocketBuffer::new(vec![0; 1024 * 1024]));
-
-        if socket.listen(endpoint).is_err() {
-            log::error!("failed to listen on socket, endpoint=[{}]", endpoint);
-            return None;
-        }
-
+        socket.listen(endpoint)?;
         socket.set_ack_delay(None);
-
-        Some(socket)
+        Ok(socket)
     }
 
-    fn create_udp_socket<'a>(endpoint: IpEndpoint) -> Option<udp::Socket<'a>> {
+    fn create_udp_socket<'a>(endpoint: IpEndpoint) -> crate::Result<udp::Socket<'a>> {
         let mut socket = udp::Socket::new(
             udp::PacketBuffer::new(vec![udp::PacketMetadata::EMPTY; 1024 * 1024], vec![0; 1024 * 1024]),
             udp::PacketBuffer::new(vec![udp::PacketMetadata::EMPTY; 1024 * 1024], vec![0; 1024 * 1024]),
         );
-
-        if socket.bind(endpoint).is_err() {
-            log::error!("failed to bind socket, endpoint=[{}]", endpoint);
-            return None;
-        }
-
-        Some(socket)
+        socket.bind(endpoint)?;
+        Ok(socket)
     }
 
-    pub(crate) fn get<'a, 'b>(&self, sockets: &'b mut SocketSet<'a>) -> SocketInstance<'a, 'b> {
+    pub(crate) fn get<'a, 'b>(&self, sockets: &'b mut SocketSet<'a>) -> crate::Result<SocketInstance<'a, 'b>> {
         let socket = match self.ip_protocol {
             IpProtocol::Tcp => {
                 let socket = sockets.get_mut::<tcp::Socket>(self.socket_handle);
@@ -78,10 +64,9 @@ impl Socket {
                 let socket = sockets.get_mut::<udp::Socket>(self.socket_handle);
                 SocketType::Udp(socket, self.local_endpoint)
             }
-            _ => panic!("unsupported transport protocol"),
+            _ => return Err(crate::Error::UnsupportedProtocol(self.ip_protocol)),
         };
-
-        SocketInstance { instance: socket }
+        Ok(SocketInstance { instance: socket })
     }
 }
 
