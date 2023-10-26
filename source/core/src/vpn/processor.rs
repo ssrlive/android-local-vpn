@@ -4,11 +4,10 @@ use crate::vpn::{
     session_info::SessionInfo,
     utils::log_packet,
 };
-use mio::{event::Event, unix::SourceFd, Events, Interest, Poll, Token, Waker};
+use mio::{event::Event, unix::SourceFd, Events, Interest, Token, Waker};
 use smoltcp::time::Instant;
 use std::{
     collections::{hash_map::Entry, HashMap},
-    fs::File,
     io::{ErrorKind, Read, Write},
     os::unix::io::FromRawFd,
 };
@@ -24,8 +23,8 @@ const TOKEN_START_ID: usize = 2;
 
 pub(crate) struct Processor<'a> {
     file_descriptor: i32,
-    file: File,
-    poll: Poll,
+    file: std::fs::File,
+    poll: mio::Poll,
     sessions: Sessions<'a>,
     tokens_to_sessions: TokensToSessions,
     next_token_id: usize,
@@ -35,8 +34,8 @@ impl<'a> Processor<'a> {
     pub(crate) fn new(file_descriptor: i32) -> Processor<'a> {
         Processor {
             file_descriptor,
-            file: unsafe { File::from_raw_fd(file_descriptor) },
-            poll: Poll::new().unwrap(),
+            file: unsafe { std::fs::File::from_raw_fd(file_descriptor) },
+            poll: mio::Poll::new().unwrap(),
             sessions: Sessions::new(),
             tokens_to_sessions: TokensToSessions::new(),
             next_token_id: TOKEN_START_ID,
@@ -45,6 +44,11 @@ impl<'a> Processor<'a> {
 
     pub(crate) fn new_stop_waker(&self) -> Waker {
         Waker::new(self.poll.registry(), TOKEN_WAKER).unwrap()
+    }
+
+    fn generate_new_token(&mut self) -> Token {
+        self.next_token_id += 1;
+        Token(self.next_token_id)
     }
 
     pub(crate) fn run(&mut self) {
@@ -74,12 +78,11 @@ impl<'a> Processor<'a> {
 
     fn create_session(&mut self, bytes: &Vec<u8>) -> Option<SessionInfo> {
         if let Some(session_info) = SessionInfo::new(bytes) {
+            let token = self.generate_new_token();
             match self.sessions.entry(session_info) {
                 Entry::Vacant(entry) => {
-                    let token = Token(self.next_token_id);
                     if let Some(session) = Session::new(&session_info, &mut self.poll, token) {
                         self.tokens_to_sessions.insert(token, session_info);
-                        self.next_token_id += 1;
 
                         entry.insert(session);
 
