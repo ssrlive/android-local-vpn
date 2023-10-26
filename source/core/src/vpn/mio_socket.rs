@@ -1,8 +1,5 @@
 use crate::tun_callbacks::on_socket_created;
-use mio::{
-    net::{TcpStream, UdpSocket},
-    Interest, Poll, Token,
-};
+use mio::{Interest, Poll, Token};
 use smoltcp::wire::{IpProtocol, IpVersion};
 use std::{
     io::{ErrorKind, Result},
@@ -11,13 +8,13 @@ use std::{
 };
 
 pub(crate) struct Socket {
-    _socket: socket2::Socket, // Need to retain so socket does not get closed.
+    _socket: ::socket2::Socket, // Need to retain so socket does not get closed.
     connection: Connection,
 }
 
 enum Connection {
-    Tcp(TcpStream),
-    Udp(UdpSocket),
+    Tcp(mio::net::TcpStream),
+    Udp(mio::net::UdpSocket),
 }
 
 impl Socket {
@@ -26,7 +23,7 @@ impl Socket {
 
         on_socket_created(socket.as_raw_fd());
 
-        let socket_address = socket2::SockAddr::from(remote_address);
+        let socket_address = ::socket2::SockAddr::from(remote_address);
 
         log::debug!("connecting to host, address={:?}", remote_address);
 
@@ -96,39 +93,39 @@ impl Socket {
         }
     }
 
-    fn create_socket(ip_protocol: &IpProtocol, ip_version: &IpVersion) -> socket2::Socket {
+    fn create_socket(ip_protocol: &IpProtocol, ip_version: &IpVersion) -> ::socket2::Socket {
         let domain = match ip_version {
-            IpVersion::Ipv4 => socket2::Domain::IPV4,
-            IpVersion::Ipv6 => socket2::Domain::IPV6,
+            IpVersion::Ipv4 => ::socket2::Domain::IPV4,
+            IpVersion::Ipv6 => ::socket2::Domain::IPV6,
         };
 
         let protocol = match ip_protocol {
-            IpProtocol::Tcp => socket2::Protocol::TCP,
-            IpProtocol::Udp => socket2::Protocol::UDP,
+            IpProtocol::Tcp => ::socket2::Protocol::TCP,
+            IpProtocol::Udp => ::socket2::Protocol::UDP,
             _ => panic!("unsupported transport protocol"),
         };
 
         let socket_type = match ip_protocol {
-            IpProtocol::Tcp => socket2::Type::STREAM,
-            IpProtocol::Udp => socket2::Type::DGRAM,
+            IpProtocol::Tcp => ::socket2::Type::STREAM,
+            IpProtocol::Udp => ::socket2::Type::DGRAM,
             _ => panic!("unsupported transport protocol"),
         };
 
-        let socket = socket2::Socket::new(domain, socket_type, Some(protocol)).unwrap();
+        let socket = ::socket2::Socket::new(domain, socket_type, Some(protocol)).unwrap();
 
         socket.set_nonblocking(true).unwrap();
 
         socket
     }
 
-    fn create_connection(ip_protocol: &IpProtocol, socket: &socket2::Socket) -> Connection {
+    fn create_connection(ip_protocol: &IpProtocol, socket: &::socket2::Socket) -> Connection {
         match ip_protocol {
             IpProtocol::Tcp => {
-                let tcp_stream = unsafe { TcpStream::from_raw_fd(socket.as_raw_fd()) };
+                let tcp_stream = unsafe { mio::net::TcpStream::from_raw_fd(socket.as_raw_fd()) };
                 Connection::Tcp(tcp_stream)
             }
             IpProtocol::Udp => {
-                let udp_socket = unsafe { UdpSocket::from_raw_fd(socket.as_raw_fd()) };
+                let udp_socket = unsafe { mio::net::UdpSocket::from_raw_fd(socket.as_raw_fd()) };
                 Connection::Udp(udp_socket)
             }
             _ => panic!("unsupported transport protocol"),
