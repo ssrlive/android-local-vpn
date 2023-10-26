@@ -1,28 +1,3 @@
-// This is free and unencumbered software released into the public domain.
-//
-// Anyone is free to copy, modify, publish, use, compile, sell, or
-// distribute this software, either in source code form or as a compiled
-// binary, for any purpose, commercial or non-commercial, and by any
-// means.
-//
-// In jurisdictions that recognize copyright laws, the author or authors
-// of this software dedicate any and all copyright interest in the
-// software to the public domain. We make this dedication for the benefit
-// of the public at large and to the detriment of our heirs and
-// successors. We intend this dedication to be an overt act of
-// relinquishment in perpetuity of all present and future rights to this
-// software under copyright law.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-// IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
-// OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
-// OTHER DEALINGS IN THE SOFTWARE.
-//
-// For more information, please refer to <https://unlicense.org>
-
 use crate::vpn::{
     buffers::{IncomingDataEvent, IncomingDirection, OutgoingDirection},
     session::Session,
@@ -74,13 +49,7 @@ impl<'a> Processor<'a> {
 
     pub(crate) fn run(&mut self) {
         let registry = self.poll.registry();
-        registry
-            .register(
-                &mut SourceFd(&self.file_descriptor),
-                TOKEN_TUN,
-                Interest::READABLE,
-            )
-            .unwrap();
+        registry.register(&mut SourceFd(&self.file_descriptor), TOKEN_TUN, Interest::READABLE).unwrap();
 
         let mut events = Events::with_capacity(EVENTS_CAPACITY);
 
@@ -194,10 +163,7 @@ impl<'a> Processor<'a> {
         if let Some(session) = self.sessions.get_mut(session_info) {
             log::trace!("write to tun");
 
-            if !session
-                .interface
-                .poll(Instant::now(), &mut session.device, &mut session.sockets)
-            {
+            if !session.interface.poll(Instant::now(), &mut session.device, &mut session.sockets) {
                 log::error!("failed to poll interface, error={:?}", session.token);
             }
 
@@ -282,9 +248,7 @@ impl<'a> Processor<'a> {
 
             session
                 .buffers
-                .write_data(OutgoingDirection::ToServer, |b| {
-                    session.mio_socket.write(b).map_err(|e| e.into())
-                });
+                .write_data(OutgoingDirection::ToServer, |b| session.mio_socket.write(b).map_err(|e| e.into()));
 
             log::trace!("finished write to server, session={:?}", session_info);
         }
@@ -325,9 +289,7 @@ impl<'a> Processor<'a> {
 
             let mut socket = session.smoltcp_socket.get(&mut session.sockets);
             if socket.can_send() {
-                session
-                    .buffers
-                    .write_data(OutgoingDirection::ToClient, |b| socket.send(b));
+                session.buffers.write_data(OutgoingDirection::ToClient, |b| socket.send(b));
             }
 
             log::trace!("finished write to smoltcp, session={:?}", session_info);

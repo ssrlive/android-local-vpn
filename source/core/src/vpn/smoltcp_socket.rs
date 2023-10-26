@@ -1,28 +1,3 @@
-// This is free and unencumbered software released into the public domain.
-//
-// Anyone is free to copy, modify, publish, use, compile, sell, or
-// distribute this software, either in source code form or as a compiled
-// binary, for any purpose, commercial or non-commercial, and by any
-// means.
-//
-// In jurisdictions that recognize copyright laws, the author or authors
-// of this software dedicate any and all copyright interest in the
-// software to the public domain. We make this dedication for the benefit
-// of the public at large and to the detriment of our heirs and
-// successors. We intend this dedication to be an overt act of
-// relinquishment in perpetuity of all present and future rights to this
-// software under copyright law.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-// IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
-// OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
-// OTHER DEALINGS IN THE SOFTWARE.
-//
-// For more information, please refer to <https://unlicense.org>
-
 use smoltcp::{
     iface::{SocketHandle, SocketSet},
     socket::{tcp, udp},
@@ -73,10 +48,7 @@ impl Socket {
     }
 
     fn create_tcp_socket<'a>(endpoint: IpEndpoint) -> Option<tcp::Socket<'a>> {
-        let mut socket = tcp::Socket::new(
-            tcp::SocketBuffer::new(vec![0; 1024 * 1024]),
-            tcp::SocketBuffer::new(vec![0; 1024 * 1024]),
-        );
+        let mut socket = tcp::Socket::new(tcp::SocketBuffer::new(vec![0; 1024 * 1024]), tcp::SocketBuffer::new(vec![0; 1024 * 1024]));
 
         if socket.listen(endpoint).is_err() {
             log::error!("failed to listen on socket, endpoint=[{}]", endpoint);
@@ -90,14 +62,8 @@ impl Socket {
 
     fn create_udp_socket<'a>(endpoint: IpEndpoint) -> Option<udp::Socket<'a>> {
         let mut socket = udp::Socket::new(
-            udp::PacketBuffer::new(
-                vec![udp::PacketMetadata::EMPTY; 1024 * 1024],
-                vec![0; 1024 * 1024],
-            ),
-            udp::PacketBuffer::new(
-                vec![udp::PacketMetadata::EMPTY; 1024 * 1024],
-                vec![0; 1024 * 1024],
-            ),
+            udp::PacketBuffer::new(vec![udp::PacketMetadata::EMPTY; 1024 * 1024], vec![0; 1024 * 1024]),
+            udp::PacketBuffer::new(vec![udp::PacketMetadata::EMPTY; 1024 * 1024], vec![0; 1024 * 1024]),
         );
 
         if socket.bind(endpoint).is_err() {
@@ -144,9 +110,7 @@ impl<'a, 'b> SocketInstance<'a, 'b> {
     pub(crate) fn send(&mut self, data: &[u8]) -> crate::Result<usize> {
         match &mut self.instance {
             SocketType::Tcp(socket) => Ok(socket.send_slice(data)?),
-            SocketType::Udp(socket, local_endpoint) => Ok(socket
-                .send_slice(data, *local_endpoint)
-                .and(Ok(data.len()))?),
+            SocketType::Udp(socket, local_endpoint) => Ok(socket.send_slice(data, *local_endpoint).and(Ok(data.len()))?),
         }
     }
 
