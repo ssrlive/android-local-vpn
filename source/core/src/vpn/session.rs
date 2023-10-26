@@ -30,7 +30,7 @@ impl<'a> Session<'a> {
 
         let session = Session {
             smoltcp_socket: Self::create_smoltcp_socket(session_info, &mut sockets)?,
-            mio_socket: Self::create_mio_socket(session_info, poll, token)?,
+            mio_socket: Self::create_mio_socket(session_info, poll, token).unwrap(),
             token,
             buffers: Self::create_buffer(session_info),
             interface,
@@ -45,15 +45,15 @@ impl<'a> Session<'a> {
         SmoltcpSocket::new(session_info.ip_protocol, session_info.source, session_info.destination, sockets)
     }
 
-    fn create_mio_socket(session_info: &SessionInfo, poll: &mut Poll, token: Token) -> Option<MioSocket> {
+    fn create_mio_socket(session_info: &SessionInfo, poll: &mut Poll, token: Token) -> std::io::Result<MioSocket> {
         let mut mio_socket = MioSocket::new(session_info.ip_protocol, session_info.ip_version, session_info.destination)?;
 
         if let Err(error) = mio_socket.register_poll(poll, token) {
             log::error!("failed to register poll, error={:?}", error);
-            return None;
+            return Err(error);
         }
 
-        Some(mio_socket)
+        Ok(mio_socket)
     }
 
     fn create_interface<D>(device: &mut D) -> Interface

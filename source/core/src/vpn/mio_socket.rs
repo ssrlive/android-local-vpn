@@ -18,8 +18,8 @@ enum Connection {
 }
 
 impl Socket {
-    pub(crate) fn new(ip_protocol: IpProtocol, ip_version: IpVersion, remote_address: SocketAddr) -> Option<Socket> {
-        let socket = Self::create_socket(&ip_protocol, &ip_version);
+    pub(crate) fn new(ip_protocol: IpProtocol, ip_version: IpVersion, remote_address: SocketAddr) -> Result<Socket> {
+        let socket = Self::create_socket(&ip_protocol, &ip_version)?;
 
         on_socket_created(socket.as_raw_fd());
 
@@ -36,14 +36,14 @@ impl Socket {
                     // do nothing.
                 } else {
                     log::error!("failed to connect to host, error={:?} address={:?}", error, remote_address);
-                    return None;
+                    return Err(error);
                 }
             }
         }
 
-        let connection = Self::create_connection(&ip_protocol, &socket);
+        let connection = Self::create_connection(&ip_protocol, &socket)?;
 
-        Some(Socket { _socket: socket, connection })
+        Ok(Socket { _socket: socket, connection })
     }
 
     pub(crate) fn register_poll(&mut self, poll: &mut Poll, token: Token) -> std::io::Result<()> {
@@ -93,42 +93,50 @@ impl Socket {
         }
     }
 
-    fn create_socket(ip_protocol: &IpProtocol, ip_version: &IpVersion) -> ::socket2::Socket {
+    fn create_socket(ip_protocol: &IpProtocol, ip_version: &IpVersion) -> std::io::Result<::socket2::Socket> {
         let domain = match ip_version {
             IpVersion::Ipv4 => ::socket2::Domain::IPV4,
             IpVersion::Ipv6 => ::socket2::Domain::IPV6,
         };
 
+        let err = format!("unsupported transport protocol: {:?}", ip_protocol);
         let protocol = match ip_protocol {
             IpProtocol::Tcp => ::socket2::Protocol::TCP,
             IpProtocol::Udp => ::socket2::Protocol::UDP,
-            _ => panic!("unsupported transport protocol"),
+            _ => {
+                return Err(std::io::Error::new(ErrorKind::Other, err));
+            }
         };
 
         let socket_type = match ip_protocol {
             IpProtocol::Tcp => ::socket2::Type::STREAM,
             IpProtocol::Udp => ::socket2::Type::DGRAM,
-            _ => panic!("unsupported transport protocol"),
+            _ => {
+                return Err(std::io::Error::new(ErrorKind::Other, err));
+            }
         };
 
-        let socket = ::socket2::Socket::new(domain, socket_type, Some(protocol)).unwrap();
+        let socket = ::socket2::Socket::new(domain, socket_type, Some(protocol))?;
 
-        socket.set_nonblocking(true).unwrap();
+        socket.set_nonblocking(true)?;
 
-        socket
+        Ok(socket)
     }
 
-    fn create_connection(ip_protocol: &IpProtocol, socket: &::socket2::Socket) -> Connection {
+    fn create_connection(ip_protocol: &IpProtocol, socket: &::socket2::Socket) -> std::io::Result<Connection> {
         match ip_protocol {
             IpProtocol::Tcp => {
                 let tcp_stream = unsafe { mio::net::TcpStream::from_raw_fd(socket.as_raw_fd()) };
-                Connection::Tcp(tcp_stream)
+                Ok(Connection::Tcp(tcp_stream))
             }
             IpProtocol::Udp => {
                 let udp_socket = unsafe { mio::net::UdpSocket::from_raw_fd(socket.as_raw_fd()) };
-                Connection::Udp(udp_socket)
+                Ok(Connection::Udp(udp_socket))
             }
-            _ => panic!("unsupported transport protocol"),
+            _ => {
+                let err = format!("unsupported transport protocol: {:?}", ip_protocol);
+                Err(std::io::Error::new(ErrorKind::Other, err))
+            }
         }
     }
 
