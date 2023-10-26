@@ -14,6 +14,45 @@ pub enum Error {
 
     #[error("smoltcp::socket::udp::RecvError {0:?}")]
     UdpRecv(#[from] smoltcp::socket::udp::RecvError),
+
+    #[error("smoltcp::wire::Error {0:?}")]
+    Wire(#[from] smoltcp::wire::Error),
+
+    #[error("smoltcp::wire::IpProtocol {0}")]
+    UnsupportedProtocol(smoltcp::wire::IpProtocol),
+
+    #[error("TryFromSliceError {0:?}")]
+    TryFromSlice(#[from] std::array::TryFromSliceError),
+
+    #[error("{0}")]
+    String(String),
+}
+
+impl From<&str> for Error {
+    fn from(err: &str) -> Self {
+        Self::String(err.to_string())
+    }
+}
+
+impl From<String> for Error {
+    fn from(err: String) -> Self {
+        Self::String(err)
+    }
+}
+
+impl From<&String> for Error {
+    fn from(err: &String) -> Self {
+        Self::String(err.to_string())
+    }
+}
+
+impl From<Error> for std::io::Error {
+    fn from(err: Error) -> Self {
+        match err {
+            Error::Io(err) => err,
+            _ => std::io::Error::new(std::io::ErrorKind::Other, err),
+        }
+    }
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;

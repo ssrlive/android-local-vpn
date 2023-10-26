@@ -76,29 +76,26 @@ impl<'a> Processor<'a> {
         }
     }
 
-    fn create_session(&mut self, bytes: &Vec<u8>) -> Option<SessionInfo> {
-        if let Some(session_info) = SessionInfo::new(bytes) {
-            let token = self.generate_new_token();
-            match self.sessions.entry(session_info) {
-                Entry::Vacant(entry) => {
-                    if let Some(session) = Session::new(&session_info, &mut self.poll, token) {
-                        self.tokens_to_sessions.insert(token, session_info);
+    fn create_session(&mut self, bytes: &Vec<u8>) -> crate::Result<SessionInfo> {
+        let session_info = SessionInfo::new(bytes)?;
+        let token = self.generate_new_token();
+        match self.sessions.entry(session_info) {
+            Entry::Vacant(entry) => {
+                if let Some(session) = Session::new(&session_info, &mut self.poll, token) {
+                    self.tokens_to_sessions.insert(token, session_info);
 
-                        entry.insert(session);
+                    entry.insert(session);
 
-                        log::debug!("created session, session={:?}", session_info);
+                    log::debug!("created session, session={:?}", session_info);
 
-                        return Some(session_info);
-                    }
-                }
-                Entry::Occupied(_) => {
-                    return Some(session_info);
+                    return Ok(session_info);
                 }
             }
-        } else {
-            log::error!("failed to get session for bytes, len={:?}", bytes.len());
+            Entry::Occupied(_) => {
+                return Ok(session_info);
+            }
         }
-        None
+        Err(crate::Error::from("failed to create session"))
     }
 
     fn destroy_session(&mut self, session_info: &SessionInfo) {
@@ -138,13 +135,18 @@ impl<'a> Processor<'a> {
                         let read_buffer = buffer[..count].to_vec();
                         log_packet("out", &read_buffer);
 
-                        if let Some(session_info) = self.create_session(&read_buffer) {
-                            let session = self.sessions.get_mut(&session_info).unwrap();
-                            session.device.receive(read_buffer);
+                        match self.create_session(&read_buffer) {
+                            Err(error) => {
+                                log::info!("failed to create session, error={}", error);
+                            }
+                            Ok(session_info) => {
+                                let session = self.sessions.get_mut(&session_info).unwrap();
+                                session.device.receive(read_buffer);
 
-                            self.write_to_tun(&session_info);
-                            self.read_from_smoltcp(&session_info);
-                            self.write_to_server(&session_info);
+                                self.write_to_tun(&session_info);
+                                self.read_from_smoltcp(&session_info);
+                                self.write_to_server(&session_info);
+                            }
                         }
                     }
                     Err(error) => {

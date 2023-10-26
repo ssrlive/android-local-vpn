@@ -7,7 +7,7 @@ main() {
     pushd ${SCRIPT_DIR}
     
     # create tun device and change state to 'up'.
-    sudo ip tuntap add name tun0 mode tun user $USER
+    sudo ip tuntap add name tun0 mode tun
     sudo ip link set tun0 up
     
     # save routing table before modifying it.
