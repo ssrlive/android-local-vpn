@@ -1,42 +1,40 @@
-use crate::vpn::session_info::TransportProtocol;
 use smoltcp::{
     iface::{SocketHandle, SocketSet},
     socket::{tcp, udp},
-    wire::IpEndpoint,
+    wire::{IpEndpoint, IpProtocol},
 };
 use std::net::SocketAddr;
 
 pub(crate) struct Socket {
     socket_handle: SocketHandle,
-    transport_protocol: TransportProtocol,
+    ip_protocol: IpProtocol,
     local_endpoint: IpEndpoint,
 }
 
 impl Socket {
-    pub(crate) fn new(
-        transport_protocol: TransportProtocol,
-        local_address: SocketAddr,
-        remote_address: SocketAddr,
-        sockets: &mut SocketSet<'_>,
-    ) -> Option<Socket> {
+    pub(crate) fn new(ip_protocol: IpProtocol, local_address: SocketAddr, remote_address: SocketAddr, sockets: &mut SocketSet<'_>) -> Option<Socket> {
         let local_endpoint = IpEndpoint::from(local_address);
 
         let remote_endpoint = IpEndpoint::from(remote_address);
 
-        let socket_handle = match transport_protocol {
-            TransportProtocol::Tcp => {
+        let socket_handle = match ip_protocol {
+            IpProtocol::Tcp => {
                 let socket = Self::create_tcp_socket(remote_endpoint).unwrap();
                 sockets.add(socket)
             }
-            TransportProtocol::Udp => {
+            IpProtocol::Udp => {
                 let socket = Self::create_udp_socket(remote_endpoint).unwrap();
                 sockets.add(socket)
+            }
+            _ => {
+                log::error!("unsupported transport protocol, protocol={:?}", ip_protocol);
+                return None;
             }
         };
 
         let socket = Socket {
             socket_handle,
-            transport_protocol,
+            ip_protocol,
             local_endpoint,
         };
 
@@ -71,15 +69,16 @@ impl Socket {
     }
 
     pub(crate) fn get<'a, 'b>(&self, sockets: &'b mut SocketSet<'a>) -> SocketInstance<'a, 'b> {
-        let socket = match self.transport_protocol {
-            TransportProtocol::Tcp => {
+        let socket = match self.ip_protocol {
+            IpProtocol::Tcp => {
                 let socket = sockets.get_mut::<tcp::Socket>(self.socket_handle);
                 SocketType::Tcp(socket)
             }
-            TransportProtocol::Udp => {
+            IpProtocol::Udp => {
                 let socket = sockets.get_mut::<udp::Socket>(self.socket_handle);
                 SocketType::Udp(socket, self.local_endpoint)
             }
+            _ => panic!("unsupported transport protocol"),
         };
 
         SocketInstance { instance: socket }

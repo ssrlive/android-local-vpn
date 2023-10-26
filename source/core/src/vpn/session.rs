@@ -1,7 +1,7 @@
 use crate::vpn::{
     buffers::{Buffers, TcpBuffers, UdpBuffers},
     mio_socket::Socket as MioSocket,
-    session_info::{SessionInfo, TransportProtocol},
+    session_info::SessionInfo,
     smoltcp_socket::Socket as SmoltcpSocket,
     vpn_device::VpnDevice,
 };
@@ -9,7 +9,7 @@ use mio::{Poll, Token};
 use smoltcp::{
     iface::{Config, Interface, SocketSet},
     time::Instant,
-    wire::{HardwareAddress, IpAddress, IpCidr, Ipv4Address},
+    wire::{HardwareAddress, IpAddress, IpCidr, IpProtocol, Ipv4Address},
 };
 
 pub(crate) struct Session<'a> {
@@ -42,11 +42,11 @@ impl<'a> Session<'a> {
     }
 
     fn create_smoltcp_socket(session_info: &SessionInfo, sockets: &mut SocketSet<'_>) -> Option<SmoltcpSocket> {
-        SmoltcpSocket::new(session_info.transport_protocol, session_info.source, session_info.destination, sockets)
+        SmoltcpSocket::new(session_info.ip_protocol, session_info.source, session_info.destination, sockets)
     }
 
     fn create_mio_socket(session_info: &SessionInfo, poll: &mut Poll, token: Token) -> Option<MioSocket> {
-        let mut mio_socket = MioSocket::new(session_info.transport_protocol, session_info.internet_protocol, session_info.destination)?;
+        let mut mio_socket = MioSocket::new(session_info.ip_protocol, session_info.ip_version, session_info.destination)?;
 
         if let Err(error) = mio_socket.register_poll(poll, token) {
             log::error!("failed to register poll, error={:?}", error);
@@ -74,9 +74,13 @@ impl<'a> Session<'a> {
     }
 
     fn create_buffer(session_info: &SessionInfo) -> Buffers {
-        match session_info.transport_protocol {
-            TransportProtocol::Tcp => Buffers::Tcp(TcpBuffers::new()),
-            TransportProtocol::Udp => Buffers::Udp(UdpBuffers::new()),
+        match session_info.ip_protocol {
+            IpProtocol::Tcp => Buffers::Tcp(TcpBuffers::new()),
+            IpProtocol::Udp => Buffers::Udp(UdpBuffers::new()),
+            _ => {
+                log::error!("unsupported transport protocol, protocol={:?}", session_info.ip_protocol);
+                panic!();
+            }
         }
     }
 }

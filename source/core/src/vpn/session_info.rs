@@ -1,26 +1,12 @@
-use smoltcp::wire::{IpProtocol, Ipv4Packet, Ipv6Packet, TcpPacket, UdpPacket};
+use smoltcp::wire::{IpProtocol, IpVersion, Ipv4Packet, Ipv6Packet, TcpPacket, UdpPacket};
 use std::{fmt, hash::Hash, net::SocketAddr};
 
 #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy, PartialOrd, Ord)]
 pub(crate) struct SessionInfo {
     pub(crate) source: SocketAddr,
     pub(crate) destination: SocketAddr,
-    pub(crate) transport_protocol: TransportProtocol,
-    pub(crate) internet_protocol: InternetProtocol,
-}
-
-#[derive(PartialEq, Eq, Hash, Debug, Clone, Copy, PartialOrd, Ord, Default)]
-pub(crate) enum TransportProtocol {
-    #[default]
-    Tcp,
-    Udp,
-}
-
-#[derive(PartialEq, Eq, Hash, Debug, Clone, Copy, PartialOrd, Ord, Default)]
-pub(crate) enum InternetProtocol {
-    #[default]
-    Ipv4,
-    Ipv6,
+    pub(crate) ip_protocol: IpProtocol,
+    pub(crate) ip_version: IpVersion,
 }
 
 impl SessionInfo {
@@ -42,8 +28,8 @@ impl SessionInfo {
                     return Some(SessionInfo {
                         source: SocketAddr::from((source_ip, packet.src_port())),
                         destination: SocketAddr::from((destination_ip, packet.dst_port())),
-                        transport_protocol: TransportProtocol::Tcp,
-                        internet_protocol: InternetProtocol::Ipv4,
+                        ip_protocol: IpProtocol::Tcp,
+                        ip_version: IpVersion::Ipv4,
                     });
                 }
                 IpProtocol::Udp => {
@@ -54,8 +40,8 @@ impl SessionInfo {
                     return Some(SessionInfo {
                         source: SocketAddr::from((source_ip, packet.src_port())),
                         destination: SocketAddr::from((destination_ip, packet.dst_port())),
-                        transport_protocol: TransportProtocol::Udp,
-                        internet_protocol: InternetProtocol::Ipv4,
+                        ip_protocol: IpProtocol::Udp,
+                        ip_version: IpVersion::Ipv4,
                     });
                 }
                 _ => {
@@ -80,8 +66,8 @@ impl SessionInfo {
                     return Some(SessionInfo {
                         source: SocketAddr::from((source_ip, packet.src_port())),
                         destination: SocketAddr::from((destination_ip, packet.dst_port())),
-                        transport_protocol: TransportProtocol::Tcp,
-                        internet_protocol: InternetProtocol::Ipv6,
+                        ip_protocol: IpProtocol::Tcp,
+                        ip_version: IpVersion::Ipv6,
                     });
                 }
                 IpProtocol::Udp => {
@@ -92,8 +78,8 @@ impl SessionInfo {
                     return Some(SessionInfo {
                         source: SocketAddr::from((source_ip, packet.src_port())),
                         destination: SocketAddr::from((destination_ip, packet.dst_port())),
-                        transport_protocol: TransportProtocol::Udp,
-                        internet_protocol: InternetProtocol::Ipv6,
+                        ip_protocol: IpProtocol::Udp,
+                        ip_version: IpVersion::Ipv6,
                     });
                 }
                 _ => {
@@ -112,8 +98,8 @@ impl fmt::Display for SessionInfo {
         write!(
             formatter,
             "[{:?}][{:?}]{}:{}->{}:{}",
-            self.internet_protocol,
-            self.transport_protocol,
+            self.ip_version,
+            self.ip_protocol,
             self.source.ip(),
             self.source.port(),
             self.destination.ip(),
