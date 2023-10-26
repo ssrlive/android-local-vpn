@@ -2,7 +2,6 @@ use crate::tun_callbacks::on_socket_created;
 use mio::{Interest, Poll, Token};
 use smoltcp::wire::{IpProtocol, IpVersion};
 use std::{
-    io::{ErrorKind, Result},
     net::{Shutdown, SocketAddr},
     os::unix::io::{AsRawFd, FromRawFd},
 };
@@ -18,7 +17,7 @@ enum Connection {
 }
 
 impl Socket {
-    pub(crate) fn new(ip_protocol: IpProtocol, ip_version: IpVersion, remote_address: SocketAddr) -> Result<Socket> {
+    pub(crate) fn new(ip_protocol: IpProtocol, ip_version: IpVersion, remote_address: SocketAddr) -> std::io::Result<Socket> {
         let socket = Self::create_socket(&ip_protocol, &ip_version)?;
 
         on_socket_created(socket.as_raw_fd());
@@ -27,19 +26,15 @@ impl Socket {
 
         log::debug!("connecting to host, address={:?}", remote_address);
 
-        match socket.connect(&socket_address) {
-            Ok(_) => {
-                log::debug!("connected to host, address={:?}", remote_address);
-            }
-            Err(error) => {
-                if error.kind() == ErrorKind::WouldBlock || error.raw_os_error() == Some(libc::EINPROGRESS) {
-                    // do nothing.
-                } else {
-                    log::error!("failed to connect to host, error={:?} address={:?}", error, remote_address);
-                    return Err(error);
-                }
+        if let Err(error) = socket.connect(&socket_address) {
+            if error.kind() == std::io::ErrorKind::WouldBlock || error.raw_os_error() == Some(libc::EINPROGRESS) {
+                // do nothing.
+            } else {
+                log::error!("failed to connect to host, error={:?} address={:?}", error, remote_address);
+                return Err(error);
             }
         }
+        log::debug!("connected to host, address={:?}", remote_address);
 
         let connection = Self::create_connection(&ip_protocol, &socket)?;
 
@@ -66,14 +61,14 @@ impl Socket {
         }
     }
 
-    pub(crate) fn write(&mut self, bytes: &[u8]) -> Result<usize> {
+    pub(crate) fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
         match &mut self.connection {
             Connection::Tcp(connection) => connection.write(bytes),
             Connection::Udp(connection) => connection.write(bytes),
         }
     }
 
-    pub(crate) fn read(&mut self) -> Result<(Vec<Vec<u8>>, bool)> {
+    pub(crate) fn read(&mut self) -> std::io::Result<(Vec<Vec<u8>>, bool)> {
         match &mut self.connection {
             Connection::Tcp(connection) => Self::read_all(connection),
             Connection::Udp(connection) => Self::read_all(connection),
@@ -104,7 +99,7 @@ impl Socket {
             IpProtocol::Tcp => ::socket2::Protocol::TCP,
             IpProtocol::Udp => ::socket2::Protocol::UDP,
             _ => {
-                return Err(std::io::Error::new(ErrorKind::Other, err));
+                return Err(std::io::Error::new(std::io::ErrorKind::Other, err));
             }
         };
 
@@ -112,7 +107,7 @@ impl Socket {
             IpProtocol::Tcp => ::socket2::Type::STREAM,
             IpProtocol::Udp => ::socket2::Type::DGRAM,
             _ => {
-                return Err(std::io::Error::new(ErrorKind::Other, err));
+                return Err(std::io::Error::new(std::io::ErrorKind::Other, err));
             }
         };
 
@@ -135,12 +130,12 @@ impl Socket {
             }
             _ => {
                 let err = format!("unsupported transport protocol: {:?}", ip_protocol);
-                Err(std::io::Error::new(ErrorKind::Other, err))
+                Err(std::io::Error::new(std::io::ErrorKind::Other, err))
             }
         }
     }
 
-    fn read_all<R>(reader: &mut R) -> Result<(Vec<Vec<u8>>, bool)>
+    fn read_all<R>(reader: &mut R) -> std::io::Result<(Vec<Vec<u8>>, bool)>
     where
         R: Read,
     {
@@ -159,7 +154,7 @@ impl Socket {
                     bytes.push(data)
                 }
                 Err(error_code) => {
-                    if error_code.kind() == ErrorKind::WouldBlock {
+                    if error_code.kind() == std::io::ErrorKind::WouldBlock {
                         break;
                     } else {
                         return Err(error_code);
@@ -172,33 +167,33 @@ impl Socket {
 }
 
 trait Read {
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize>;
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize>;
 }
 
 impl Read for mio::net::UdpSocket {
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         self.recv(buf)
     }
 }
 
 impl Read for mio::net::TcpStream {
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         <mio::net::TcpStream as std::io::Read>::read(self, buf)
     }
 }
 
 trait Write {
-    fn write(&mut self, buf: &[u8]) -> Result<usize>;
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize>;
 }
 
 impl Write for mio::net::UdpSocket {
-    fn write(&mut self, buf: &[u8]) -> Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.send(buf)
     }
 }
 
 impl Write for mio::net::TcpStream {
-    fn write(&mut self, buf: &[u8]) -> Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         <mio::net::TcpStream as std::io::Write>::write(self, buf)
     }
 }
