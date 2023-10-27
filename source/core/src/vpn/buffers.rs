@@ -74,8 +74,8 @@ pub(crate) struct TcpBuffers {
 impl TcpBuffers {
     pub(crate) fn new() -> TcpBuffers {
         TcpBuffers {
-            client_buf: Default::default(),
-            server_buf: Default::default(),
+            client_buf: VecDeque::default(),
+            server_buf: VecDeque::default(),
         }
     }
 

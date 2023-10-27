@@ -10,7 +10,7 @@ pub(crate) struct SessionInfo {
 }
 
 impl SessionInfo {
-    pub(crate) fn new(bytes: &Vec<u8>) -> crate::Result<SessionInfo> {
+    pub(crate) fn new(bytes: &[u8]) -> crate::Result<SessionInfo> {
         Self::new_ipv4(bytes).or_else(|e| {
             if let crate::Error::UnsupportedProtocol(_) = e {
                 Err(e)
@@ -20,7 +20,7 @@ impl SessionInfo {
         })
     }
 
-    fn new_ipv4(bytes: &Vec<u8>) -> crate::Result<SessionInfo> {
+    fn new_ipv4(bytes: &[u8]) -> crate::Result<SessionInfo> {
         if let Ok(ip_packet) = Ipv4Packet::new_checked(&bytes) {
             let protocol = ip_packet.next_header();
             match protocol {
@@ -57,7 +57,7 @@ impl SessionInfo {
         Err(crate::Error::from(err))
     }
 
-    fn new_ipv6(bytes: &Vec<u8>) -> crate::Result<SessionInfo> {
+    fn new_ipv6(bytes: &[u8]) -> crate::Result<SessionInfo> {
         if let Ok(ip_packet) = Ipv6Packet::new_checked(&bytes) {
             let protocol = ip_packet.next_header();
             match protocol {

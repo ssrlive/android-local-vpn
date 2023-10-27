@@ -1,6 +1,6 @@
 use smoltcp::wire::{IpProtocol, Ipv4Packet, TcpPacket, UdpPacket};
 
-pub fn log_packet(message: &str, bytes: &Vec<u8>) {
+pub fn log_packet(message: &str, bytes: &[u8]) {
     let result = Ipv4Packet::new_checked(&bytes);
     match result {
         Ok(ip_packet) => match ip_packet.next_header() {

@@ -68,6 +68,7 @@ impl<'a> Processor<'a> {
                 if event.token() == TOKEN_TUN {
                     self.handle_tun_event(event);
                 } else if event.token() == TOKEN_WAKER {
+                    log::info!("stopping vpn");
                     break 'poll_loop;
                 } else {
                     self.handle_server_event(event);
@@ -77,7 +78,7 @@ impl<'a> Processor<'a> {
         Ok(())
     }
 
-    fn create_session(&mut self, bytes: &Vec<u8>) -> crate::Result<SessionInfo> {
+    fn create_session(&mut self, bytes: &[u8]) -> crate::Result<SessionInfo> {
         let session_info = SessionInfo::new(bytes)?;
         let token = self.generate_new_token();
         match self.sessions.entry(session_info) {

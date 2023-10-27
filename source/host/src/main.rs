@@ -1,10 +1,9 @@
 use clap::Parser;
-use core::tun;
-use core::tun_callbacks;
 use env_logger::Env;
 use smoltcp::phy::{Medium, TunTapInterface};
 use std::ffi::CString;
 use std::os::unix::io::AsRawFd;
+use tuncore::tun_callbacks;
 
 static OUT_INTERFACE: std::sync::OnceLock<CString> = std::sync::OnceLock::new();
 
@@ -36,14 +35,14 @@ fn main() {
         Ok(tun) => {
             set_panic_handler();
 
-            tun::create();
-            tun::start(tun.as_raw_fd());
+            tuncore::tun::create();
+            tuncore::tun::start(tun.as_raw_fd());
 
             println!("Press any key to exit");
             std::io::stdin().read_line(&mut String::new()).unwrap();
 
-            tun::stop();
-            tun::destroy();
+            tuncore::tun::stop();
+            tuncore::tun::destroy();
 
             remove_panic_handler();
         }
