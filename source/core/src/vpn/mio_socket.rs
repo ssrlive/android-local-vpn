@@ -6,14 +6,16 @@ use std::{
     os::unix::io::{AsRawFd, FromRawFd},
 };
 
+#[derive(Debug)]
 pub(crate) struct Socket {
     _socket: ::socket2::Socket, // Need to retain so socket does not get closed.
     connection: Connection,
 }
 
+#[derive(Debug)]
 enum Connection {
-    Tcp(mio::net::TcpStream),
-    Udp(mio::net::UdpSocket),
+    Tcp(::mio::net::TcpStream),
+    Udp(::mio::net::UdpSocket),
 }
 
 impl Socket {
@@ -34,7 +36,6 @@ impl Socket {
                 return Err(error);
             }
         }
-        log::debug!("connected to host, address={:?}", remote_address);
 
         let connection = Self::create_connection(&ip_protocol, &socket)?;
 
@@ -121,11 +122,11 @@ impl Socket {
     fn create_connection(ip_protocol: &IpProtocol, socket: &::socket2::Socket) -> std::io::Result<Connection> {
         match ip_protocol {
             IpProtocol::Tcp => {
-                let tcp_stream = unsafe { mio::net::TcpStream::from_raw_fd(socket.as_raw_fd()) };
+                let tcp_stream = unsafe { ::mio::net::TcpStream::from_raw_fd(socket.as_raw_fd()) };
                 Ok(Connection::Tcp(tcp_stream))
             }
             IpProtocol::Udp => {
-                let udp_socket = unsafe { mio::net::UdpSocket::from_raw_fd(socket.as_raw_fd()) };
+                let udp_socket = unsafe { ::mio::net::UdpSocket::from_raw_fd(socket.as_raw_fd()) };
                 Ok(Connection::Udp(udp_socket))
             }
             _ => {
@@ -170,15 +171,15 @@ trait Read {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize>;
 }
 
-impl Read for mio::net::UdpSocket {
+impl Read for ::mio::net::UdpSocket {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         self.recv(buf)
     }
 }
 
-impl Read for mio::net::TcpStream {
+impl Read for ::mio::net::TcpStream {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        <mio::net::TcpStream as std::io::Read>::read(self, buf)
+        <::mio::net::TcpStream as std::io::Read>::read(self, buf)
     }
 }
 
@@ -186,14 +187,14 @@ trait Write {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize>;
 }
 
-impl Write for mio::net::UdpSocket {
+impl Write for ::mio::net::UdpSocket {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.send(buf)
     }
 }
 
-impl Write for mio::net::TcpStream {
+impl Write for ::mio::net::TcpStream {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        <mio::net::TcpStream as std::io::Write>::write(self, buf)
+        <::mio::net::TcpStream as std::io::Write>::write(self, buf)
     }
 }
