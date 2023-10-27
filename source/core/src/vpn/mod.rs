@@ -22,14 +22,18 @@ impl Vpn {
         }
     }
 
-    pub fn start(&mut self) {
-        let mut processor = processor::Processor::new(self.file_descriptor);
-        self.stop_waker = Some(processor.new_stop_waker());
-        self.thread_join_handle = Some(std::thread::spawn(move || processor.run()));
+    pub fn start(&mut self) -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let mut processor = processor::Processor::new(self.file_descriptor)?;
+        self.stop_waker = Some(processor.new_stop_waker()?);
+        self.thread_join_handle = Some(std::thread::spawn(move || processor.run().unwrap()));
+        Ok(())
     }
 
-    pub fn stop(&mut self) {
-        self.stop_waker.as_ref().unwrap().wake().unwrap();
-        self.thread_join_handle.take().unwrap().join().unwrap();
+    pub fn stop(&mut self) -> std::result::Result<(), Box<dyn std::error::Error>> {
+        self.stop_waker.as_ref().ok_or("no waker")?.wake()?;
+        if let Err(e) = self.thread_join_handle.take().ok_or("no thread")?.join() {
+            log::error!("failed to join thread: {:?}", e);
+        }
+        Ok(())
     }
 }

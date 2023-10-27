@@ -99,13 +99,8 @@ impl fmt::Display for SessionInfo {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         write!(
             formatter,
-            "[{:?}][{:?}]{}:{}->{}:{}",
-            self.ip_version,
-            self.ip_protocol,
-            self.source.ip(),
-            self.source.port(),
-            self.destination.ip(),
-            self.destination.port()
+            "[{:?}][{:?}]{}->{}",
+            self.ip_version, self.ip_protocol, self.source, self.destination
         )
     }
 }
