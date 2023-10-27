@@ -103,7 +103,7 @@ impl<'a> Processor<'a> {
         log::trace!("destroying session, session={:?}", session_info);
 
         // push any pending data back to tun device before destroying session.
-        self.write_to_smoltcp(session_info);
+        self.write_to_smoltcp(session_info).unwrap();
         self.write_to_tun(session_info);
 
         if let Some(session) = self.sessions.get_mut(session_info) {
@@ -143,7 +143,7 @@ impl<'a> Processor<'a> {
                                 session.device.receive(read_buffer);
 
                                 self.write_to_tun(&session_info);
-                                self.read_from_smoltcp(&session_info);
+                                self.read_from_smoltcp(&session_info).unwrap();
                                 self.write_to_server(&session_info);
                             }
                         }
@@ -183,13 +183,13 @@ impl<'a> Processor<'a> {
                 log::trace!("handle server event read, session={:?}", session_info);
 
                 self.read_from_server(&session_info);
-                self.write_to_smoltcp(&session_info);
+                self.write_to_smoltcp(&session_info).unwrap();
                 self.write_to_tun(&session_info);
             }
             if event.is_writable() {
                 log::trace!("handle server event write, session={:?}", session_info);
 
-                self.read_from_smoltcp(&session_info);
+                self.read_from_smoltcp(&session_info).unwrap();
                 self.write_to_server(&session_info);
             }
             if event.is_read_closed() || event.is_write_closed() {
@@ -244,41 +244,41 @@ impl<'a> Processor<'a> {
         }
     }
 
-    fn read_from_smoltcp(&mut self, session_info: &SessionInfo) {
+    fn read_from_smoltcp(&mut self, session_info: &SessionInfo) -> crate::Result<()> {
         if let Some(session) = self.sessions.get_mut(session_info) {
             log::trace!("read from smoltcp, session={:?}", session_info);
 
             let mut data: [u8; 65535] = [0; 65535];
             loop {
-                let mut socket = session.smoltcp_socket.get(&mut session.sockets).unwrap();
+                let mut socket = session.smoltcp_socket.get(&mut session.sockets)?;
                 if !socket.can_receive() {
                     break;
                 }
-                match socket.receive(&mut data) {
-                    Ok(data_len) => {
-                        let event = IncomingDataEvent {
-                            direction: IncomingDirection::FromClient,
-                            buffer: &data[..data_len],
-                        };
-                        session.buffers.recv_data(event);
-                    }
-                    Err(error) => {
-                        log::error!("failed to receive from smoltcp, error={:?}", error);
-                        break;
-                    }
+                let data_len = socket.receive(&mut data);
+                if let Err(e) = data_len {
+                    log::error!("failed to receive from smoltcp socket, error={:?}", e);
+                    break;
                 }
+                let data_len = data_len?;
+                let event = IncomingDataEvent {
+                    direction: IncomingDirection::FromClient,
+                    buffer: &data[..data_len],
+                };
+                session.buffers.recv_data(event);
             }
         }
+        Ok(())
     }
 
-    fn write_to_smoltcp(&mut self, session_info: &SessionInfo) {
+    fn write_to_smoltcp(&mut self, session_info: &SessionInfo) -> crate::Result<()> {
         if let Some(session) = self.sessions.get_mut(session_info) {
             log::trace!("write to smoltcp, session={:?}", session_info);
 
-            let mut socket = session.smoltcp_socket.get(&mut session.sockets).unwrap();
+            let mut socket = session.smoltcp_socket.get(&mut session.sockets)?;
             if socket.can_send() {
                 session.buffers.consume_data(OutgoingDirection::ToClient, |b| socket.send(b));
             }
         }
+        Ok(())
     }
 }

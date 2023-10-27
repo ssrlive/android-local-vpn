@@ -5,6 +5,7 @@ use smoltcp::{
 };
 use std::net::SocketAddr;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) struct Socket {
     socket_handle: SocketHandle,
     ip_protocol: IpProtocol,
@@ -70,10 +71,12 @@ impl Socket {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct SocketInstance<'a, 'b> {
     instance: SocketType<'a, 'b>,
 }
 
+#[derive(Debug)]
 enum SocketType<'a, 'b> {
     Tcp(&'b mut tcp::Socket<'a>),
     Udp(&'b mut udp::Socket<'a>, IpEndpoint),

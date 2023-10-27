@@ -3,10 +3,10 @@ use std::{fmt, hash::Hash, net::SocketAddr};
 
 #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy, PartialOrd, Ord)]
 pub(crate) struct SessionInfo {
+    pub(crate) ip_version: IpVersion,
+    pub(crate) ip_protocol: IpProtocol,
     pub(crate) source: SocketAddr,
     pub(crate) destination: SocketAddr,
-    pub(crate) ip_protocol: IpProtocol,
-    pub(crate) ip_version: IpVersion,
 }
 
 impl SessionInfo {
