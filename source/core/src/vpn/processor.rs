@@ -7,7 +7,7 @@ use crate::vpn::{
 use mio::{event::Event, unix::SourceFd, Events, Interest, Token, Waker};
 use smoltcp::time::Instant;
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::HashMap,
     io::{ErrorKind, Read, Write},
     os::unix::io::FromRawFd,
 };
@@ -80,22 +80,15 @@ impl<'a> Processor<'a> {
 
     fn create_session(&mut self, bytes: &[u8]) -> crate::Result<SessionInfo> {
         let session_info = SessionInfo::new(bytes)?;
+        if let Some(_) = self.sessions.get(&session_info) {
+            return Ok(session_info);
+        }
         let token = self.generate_new_token();
-        match self.sessions.entry(session_info) {
-            Entry::Vacant(entry) => {
-                if let Ok(session) = Session::new(&session_info, &mut self.poll, token) {
-                    self.tokens_to_sessions.insert(token, session_info);
-
-                    entry.insert(session);
-
-                    log::debug!("created session, session={:?}", session_info);
-
-                    return Ok(session_info);
-                }
-            }
-            Entry::Occupied(_) => {
-                return Ok(session_info);
-            }
+        if let Ok(session) = Session::new(&session_info, &mut self.poll, token) {
+            self.tokens_to_sessions.insert(token, session_info);
+            self.sessions.insert(session_info, session);
+            log::debug!("created session, session={:?}", session_info);
+            return Ok(session_info);
         }
         Err(crate::Error::from("failed to create session"))
     }
