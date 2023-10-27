@@ -66,7 +66,7 @@ impl<'a> Processor<'a> {
 
             for event in events.iter() {
                 if event.token() == TOKEN_TUN {
-                    self.handle_tun_event(event);
+                    self.handle_tun_event(event)?;
                 } else if event.token() == TOKEN_WAKER {
                     log::info!("stopping vpn");
                     break 'poll_loop;
@@ -114,45 +114,41 @@ impl<'a> Processor<'a> {
         }
     }
 
-    fn handle_tun_event(&mut self, event: &Event) {
+    fn handle_tun_event(&mut self, event: &Event) -> std::io::Result<()> {
         if event.is_readable() {
             log::trace!("handle tun event");
 
             let mut buffer: [u8; 65535] = [0; 65535];
             loop {
-                match self.file.read(&mut buffer) {
-                    Ok(count) => {
-                        if count == 0 {
-                            break;
-                        }
-                        let read_buffer = buffer[..count].to_vec();
-                        log_packet("out", &read_buffer);
-
-                        match self.create_session(&read_buffer) {
-                            Err(error) => {
-                                log::info!("failed to create session, error={}", error);
-                            }
-                            Ok(session_info) => {
-                                let session = self.sessions.get_mut(&session_info).unwrap();
-                                session.device.receive(read_buffer);
-
-                                self.write_to_tun(&session_info);
-                                self.read_from_smoltcp(&session_info).unwrap();
-                                self.write_to_server(&session_info);
-                            }
-                        }
+                let count = self.file.read(&mut buffer);
+                if let Err(error) = count {
+                    if error.kind() != ErrorKind::WouldBlock {
+                        log::error!("failed to read from tun, error={:?}", error);
                     }
-                    Err(error) => {
-                        if error.kind() == ErrorKind::WouldBlock {
-                            // do nothing.
-                        } else {
-                            log::error!("failed to read from tun, error={:?}", error);
-                        }
-                        break;
-                    }
+                    break;
                 }
+                let count = count?;
+                if count == 0 {
+                    break;
+                }
+                let read_buffer = buffer[..count].to_vec();
+                log_packet("out", &read_buffer);
+
+                let session_info = self.create_session(&read_buffer);
+                if let Err(error) = session_info {
+                    log::info!("failed to create session, error={}", error);
+                    continue;
+                }
+                let session_info = session_info?;
+                let session = self.sessions.get_mut(&session_info).ok_or(crate::Error::from("sessions"))?;
+                session.device.receive(read_buffer);
+
+                self.write_to_tun(&session_info);
+                self.read_from_smoltcp(&session_info)?;
+                self.write_to_server(&session_info);
             }
         }
+        Ok(())
     }
 
     fn write_to_tun(&mut self, session_info: &SessionInfo) {
