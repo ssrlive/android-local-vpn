@@ -18,11 +18,11 @@ impl VpnDevice {
         }
     }
 
-    pub(crate) fn receive(&mut self, bytes: Vec<u8>) {
+    pub(crate) fn receive_data(&mut self, bytes: Vec<u8>) {
         self.rx_queue.push_back(bytes);
     }
 
-    pub(crate) fn transmit(&mut self) -> Option<Vec<u8>> {
+    pub(crate) fn distribute_data(&mut self) -> Option<Vec<u8>> {
         self.tx_queue.pop_front()
     }
 }

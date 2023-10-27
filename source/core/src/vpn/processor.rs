@@ -141,7 +141,7 @@ impl<'a> Processor<'a> {
                 }
                 let session_info = session_info?;
                 let session = self.sessions.get_mut(&session_info).ok_or(crate::Error::from("sessions"))?;
-                session.device.receive(read_buffer);
+                session.device.receive_data(read_buffer);
 
                 self.write_to_tun(&session_info);
                 self.read_from_smoltcp(&session_info)?;
@@ -159,7 +159,7 @@ impl<'a> Processor<'a> {
                 log::trace!("no readiness of socket might have changed. {:?}", session_info);
             }
 
-            while let Some(bytes) = session.device.transmit() {
+            while let Some(bytes) = session.device.distribute_data() {
                 log_packet("in", &bytes);
                 self.file.write_all(&bytes[..]).unwrap();
             }
