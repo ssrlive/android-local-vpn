@@ -71,7 +71,7 @@ impl<'a> Processor<'a> {
                     log::info!("stopping vpn");
                     break 'poll_loop;
                 } else {
-                    self.handle_server_event(event);
+                    self.handle_server_event(event)?;
                 }
             }
         }
@@ -93,25 +93,26 @@ impl<'a> Processor<'a> {
         Err(crate::Error::from("failed to create session"))
     }
 
-    fn destroy_session(&mut self, session_info: &SessionInfo) {
+    fn destroy_session(&mut self, session_info: &SessionInfo) -> crate::Result<()> {
         log::trace!("destroying session, session={:?}", session_info);
 
         // push any pending data back to tun device before destroying session.
-        self.write_to_smoltcp(session_info).unwrap();
+        self.write_to_smoltcp(session_info)?;
         self.write_to_tun(session_info);
 
         if let Some(session) = self.sessions.get_mut(session_info) {
-            let mut smoltcp_socket = session.smoltcp_socket.get(&mut session.sockets).unwrap();
+            let mut smoltcp_socket = session.smoltcp_socket.get(&mut session.sockets)?;
             smoltcp_socket.close();
 
             let mio_socket = &mut session.mio_socket;
             mio_socket.close();
-            mio_socket.deregister_poll(&mut self.poll).unwrap();
+            mio_socket.deregister_poll(&mut self.poll)?;
 
             self.tokens_to_sessions.remove(&session.token);
 
             self.sessions.remove(session_info);
         }
+        Ok(())
     }
 
     fn handle_tun_event(&mut self, event: &Event) -> std::io::Result<()> {
@@ -166,28 +167,29 @@ impl<'a> Processor<'a> {
         }
     }
 
-    fn handle_server_event(&mut self, event: &Event) {
+    fn handle_server_event(&mut self, event: &Event) -> crate::Result<()> {
         if let Some(session_info) = self.tokens_to_sessions.get(&event.token()) {
             let session_info = *session_info;
             if event.is_readable() {
                 log::trace!("handle server event read, session={:?}", session_info);
 
                 self.read_from_server(&session_info);
-                self.write_to_smoltcp(&session_info).unwrap();
+                self.write_to_smoltcp(&session_info)?;
                 self.write_to_tun(&session_info);
             }
             if event.is_writable() {
                 log::trace!("handle server event write, session={:?}", session_info);
 
-                self.read_from_smoltcp(&session_info).unwrap();
+                self.read_from_smoltcp(&session_info)?;
                 self.write_to_server(&session_info);
             }
             if event.is_read_closed() || event.is_write_closed() {
                 log::trace!("handle server event closed, session={:?}", session_info);
 
-                self.destroy_session(&session_info);
+                self.destroy_session(&session_info)?;
             }
         }
+        Ok(())
     }
 
     fn read_from_server(&mut self, session_info: &SessionInfo) {
@@ -219,7 +221,7 @@ impl<'a> Processor<'a> {
                 }
             };
             if is_session_closed {
-                self.destroy_session(session_info);
+                self.destroy_session(session_info).unwrap();
             }
         }
     }
