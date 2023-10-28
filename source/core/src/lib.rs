@@ -2,6 +2,8 @@ mod error;
 mod vpn;
 pub use error::{Error, Result};
 
+pub(crate) const MAX_PACKET_SIZE: usize = 0xffff;
+
 pub mod tun {
     use crate::vpn::Vpn;
     use std::process;

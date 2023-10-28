@@ -126,7 +126,7 @@ impl<'a> Processor<'a> {
         if event.is_readable() {
             log::trace!("handle tun event");
 
-            let mut buffer: [u8; 65535] = [0; 65535];
+            let mut buffer = [0_u8; crate::MAX_PACKET_SIZE];
             loop {
                 let count = self.file.read(&mut buffer);
                 if let Err(error) = count {
@@ -246,7 +246,7 @@ impl<'a> Processor<'a> {
         if let Some(session) = self.sessions.get_mut(session_info) {
             log::trace!("read from smoltcp, session={:?}", session_info);
 
-            let mut data: [u8; 65535] = [0; 65535];
+            let mut data = [0_u8; crate::MAX_PACKET_SIZE];
             loop {
                 let mut socket = session.smoltcp_socket.get(&mut session.sockets)?;
                 if !socket.can_receive() {

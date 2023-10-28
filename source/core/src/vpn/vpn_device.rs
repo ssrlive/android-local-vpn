@@ -33,7 +33,7 @@ impl ::smoltcp::phy::Device for VpnDevice {
 
     fn capabilities(&self) -> DeviceCapabilities {
         let mut default = DeviceCapabilities::default();
-        default.max_transmission_unit = 65535;
+        default.max_transmission_unit = crate::MAX_PACKET_SIZE;
         default.medium = Medium::Ip;
         default
     }
