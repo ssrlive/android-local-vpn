@@ -2,8 +2,7 @@ use clap::Parser;
 use env_logger::Env;
 use smoltcp::phy::{Medium, TunTapInterface};
 use std::ffi::CString;
-use std::os::unix::io::AsRawFd;
-use tuncore::tun_callbacks;
+use std::os::unix::io::{AsRawFd, RawFd};
 
 static OUT_INTERFACE: std::sync::OnceLock<CString> = std::sync::OnceLock::new();
 
@@ -28,7 +27,7 @@ fn main() {
 
     OUT_INTERFACE.set(CString::new(args.out).unwrap()).unwrap();
 
-    tun_callbacks::set_socket_created_callback(Some(on_socket_created));
+    tuncore::tun_callbacks::set_socket_created_callback(Some(on_socket_created));
 
     let tun_name = &args.tun;
     match TunTapInterface::new(tun_name, Medium::Ip) {
@@ -55,11 +54,11 @@ fn main() {
     }
 }
 
-fn on_socket_created(socket: i32) {
+fn on_socket_created(socket: RawFd) {
     bind_socket_to_interface(socket, OUT_INTERFACE.get().unwrap());
 }
 
-fn bind_socket_to_interface(socket: i32, interface: &CString) {
+fn bind_socket_to_interface(socket: RawFd, interface: &CString) {
     let result = unsafe {
         libc::setsockopt(
             socket,

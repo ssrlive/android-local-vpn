@@ -44,8 +44,10 @@ pub mod tun {
     }
 }
 
+#[cfg(target_family = "unix")]
 pub mod tun_callbacks {
 
+    use std::os::unix::io::RawFd;
     use std::sync::RwLock;
 
     lazy_static::lazy_static! {
@@ -60,10 +62,10 @@ pub mod tun_callbacks {
         }
     }
 
-    pub fn on_socket_created(socket: i32) {
+    pub fn on_socket_created(socket: RawFd) {
         let callback = CALLBACK.read().unwrap();
         callback(socket);
     }
 
-    fn on_socket_created_stub(_socket: i32) {}
+    fn on_socket_created_stub(_socket: RawFd) {}
 }

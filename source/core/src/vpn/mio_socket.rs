@@ -1,3 +1,4 @@
+#[cfg(target_family = "unix")]
 use crate::tun_callbacks::on_socket_created;
 use mio::{Interest, Poll, Token};
 use smoltcp::wire::{IpProtocol, IpVersion};
@@ -22,6 +23,7 @@ impl Socket {
     pub(crate) fn new(ip_protocol: IpProtocol, ip_version: IpVersion, remote_address: SocketAddr) -> std::io::Result<Socket> {
         let socket = Self::create_socket(&ip_protocol, &ip_version)?;
 
+        #[cfg(target_family = "unix")]
         on_socket_created(socket.as_raw_fd());
 
         let socket_address = ::socket2::SockAddr::from(remote_address);
@@ -154,11 +156,11 @@ impl Socket {
                     let data = buffer[..count].to_vec();
                     bytes.push(data)
                 }
-                Err(error_code) => {
-                    if error_code.kind() == std::io::ErrorKind::WouldBlock {
+                Err(err) => {
+                    if err.kind() == std::io::ErrorKind::WouldBlock {
                         break;
                     } else {
-                        return Err(error_code);
+                        return Err(err);
                     }
                 }
             }
