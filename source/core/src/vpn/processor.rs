@@ -167,7 +167,7 @@ impl<'a> Processor<'a> {
                 log::trace!("no readiness of socket might have changed. {:?}", session_info);
             }
 
-            while let Some(bytes) = session.device.distribute_data() {
+            while let Some(bytes) = session.device.pop_data() {
                 log_packet("in", &bytes);
                 self.file.write_all(&bytes[..]).unwrap();
             }

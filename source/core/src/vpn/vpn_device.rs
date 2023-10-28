@@ -22,7 +22,7 @@ impl VpnDevice {
         self.rx_queue.push_back(bytes);
     }
 
-    pub(crate) fn distribute_data(&mut self) -> Option<Vec<u8>> {
+    pub(crate) fn pop_data(&mut self) -> Option<Vec<u8>> {
         self.tx_queue.pop_front()
     }
 }
