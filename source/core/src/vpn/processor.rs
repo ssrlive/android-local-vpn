@@ -99,7 +99,7 @@ impl<'a> Processor<'a> {
 
         // push any pending data back to tun device before destroying session.
         self.write_to_smoltcp(session_info)?;
-        self.write_to_tun(session_info);
+        self.write_to_tun(session_info)?;
 
         if let Some(session) = self.sessions.get_mut(session_info) {
             let mut smoltcp_socket = session.smoltcp_socket.get(&mut session.sockets)?;
@@ -148,10 +148,10 @@ impl<'a> Processor<'a> {
                     continue;
                 }
                 let session_info = session_info?;
-                let session = self.sessions.get_mut(&session_info).ok_or(crate::Error::from("sessions"))?;
+                let session = self.sessions.get_mut(&session_info).ok_or(crate::Error::from("handle_tun_event"))?;
                 session.device.receive_data(read_buffer);
 
-                self.write_to_tun(&session_info);
+                self.write_to_tun(&session_info)?;
                 self.read_from_smoltcp(&session_info)?;
                 self.write_to_server(&session_info);
             }
@@ -159,19 +159,19 @@ impl<'a> Processor<'a> {
         Ok(())
     }
 
-    fn write_to_tun(&mut self, session_info: &SessionInfo) {
-        if let Some(session) = self.sessions.get_mut(session_info) {
-            log::trace!("write to tun device, session={:?}", session_info);
+    fn write_to_tun(&mut self, session_info: &SessionInfo) -> crate::Result<()> {
+        let session = self.sessions.get_mut(session_info).ok_or("write_to_tun")?;
+        log::trace!("write to tun device, session={:?}", session_info);
 
-            if !session.interface.poll(Instant::now(), &mut session.device, &mut session.sockets) {
-                log::trace!("no readiness of socket might have changed. {:?}", session_info);
-            }
-
-            while let Some(bytes) = session.device.pop_data() {
-                log_packet("in", &bytes);
-                self.file.write_all(&bytes[..]).unwrap();
-            }
+        if !session.interface.poll(Instant::now(), &mut session.device, &mut session.sockets) {
+            log::trace!("no readiness of socket might have changed. {:?}", session_info);
         }
+
+        while let Some(bytes) = session.device.pop_data() {
+            log_packet("in", &bytes);
+            self.file.write_all(&bytes[..])?;
+        }
+        Ok(())
     }
 
     fn handle_server_event(&mut self, event: &Event) -> crate::Result<()> {
@@ -182,7 +182,7 @@ impl<'a> Processor<'a> {
 
                 self.read_from_server(&session_info)?;
                 self.write_to_smoltcp(&session_info)?;
-                self.write_to_tun(&session_info);
+                self.write_to_tun(&session_info)?;
             }
             if event.is_writable() {
                 log::trace!("handle server event write, session={:?}", session_info);
@@ -200,7 +200,7 @@ impl<'a> Processor<'a> {
     }
 
     fn read_from_server(&mut self, session_info: &SessionInfo) -> crate::Result<()> {
-        let session = self.sessions.get_mut(session_info).ok_or("sessions")?;
+        let session = self.sessions.get_mut(session_info).ok_or("read_from_server")?;
         log::trace!("read from server, session={:?}", session_info);
 
         let (read_seqs, is_session_closed) = match session.mio_socket.read() {
