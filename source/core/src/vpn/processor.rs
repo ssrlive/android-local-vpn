@@ -180,7 +180,7 @@ impl<'a> Processor<'a> {
             if event.is_readable() {
                 log::trace!("handle server event read, session={:?}", session_info);
 
-                self.read_from_server(&session_info);
+                self.read_from_server(&session_info)?;
                 self.write_to_smoltcp(&session_info)?;
                 self.write_to_tun(&session_info);
             }
@@ -199,38 +199,37 @@ impl<'a> Processor<'a> {
         Ok(())
     }
 
-    fn read_from_server(&mut self, session_info: &SessionInfo) {
-        if let Some(session) = self.sessions.get_mut(session_info) {
-            log::trace!("read from server, session={:?}", session_info);
+    fn read_from_server(&mut self, session_info: &SessionInfo) -> crate::Result<()> {
+        let session = self.sessions.get_mut(session_info).ok_or("sessions")?;
+        log::trace!("read from server, session={:?}", session_info);
 
-            let is_session_closed = match session.mio_socket.read() {
-                Ok((read_seqs, is_closed)) => {
-                    for bytes in read_seqs {
-                        if !bytes.is_empty() {
-                            let event = IncomingDataEvent {
-                                direction: IncomingDirection::FromServer,
-                                buffer: &bytes[..],
-                            };
-                            session.buffers.recv_data(event);
-                        }
-                    }
-                    is_closed
+        let (read_seqs, is_session_closed) = match session.mio_socket.read() {
+            Ok(result) => result,
+            Err(error) => {
+                assert_ne!(error.kind(), ErrorKind::WouldBlock);
+                if error.kind() != ErrorKind::ConnectionReset {
+                    log::error!("failed to read from tcp stream, error={:?}", error);
                 }
-                Err(error) => {
-                    if error.kind() == ErrorKind::WouldBlock {
-                        false
-                    } else if error.kind() == ErrorKind::ConnectionReset {
-                        true
-                    } else {
-                        log::error!("failed to read from tcp stream, errro={:?}", error);
-                        true
-                    }
-                }
-            };
-            if is_session_closed {
-                self.destroy_session(session_info).unwrap();
+                (vec![], true)
+            }
+        };
+
+        for bytes in read_seqs {
+            if !bytes.is_empty() {
+                // here exchange the business logic data
+                let event = IncomingDataEvent {
+                    direction: IncomingDirection::FromServer,
+                    buffer: &bytes[..],
+                };
+                session.buffers.recv_data(event);
             }
         }
+
+        if is_session_closed {
+            self.destroy_session(session_info)?;
+        }
+
+        Ok(())
     }
 
     fn write_to_server(&mut self, session_info: &SessionInfo) {
