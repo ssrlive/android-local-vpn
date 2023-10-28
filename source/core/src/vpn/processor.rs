@@ -19,7 +19,7 @@ const EVENTS_CAPACITY: usize = 1024;
 
 const TOKEN_TUN: Token = Token(0);
 const TOKEN_WAKER: Token = Token(1);
-const TOKEN_START_ID: usize = 2;
+const TOKEN_START_ID: usize = 10;
 
 pub(crate) struct Processor<'a> {
     file_descriptor: i32,
@@ -52,6 +52,8 @@ impl<'a> Processor<'a> {
     }
 
     pub(crate) fn run(&mut self) -> std::io::Result<()> {
+        log::info!("starting vpn");
+
         let registry = self.poll.registry();
         registry.register(&mut SourceFd(&self.file_descriptor), TOKEN_TUN, Interest::READABLE)?;
 
@@ -59,7 +61,7 @@ impl<'a> Processor<'a> {
 
         'poll_loop: loop {
             if let Err(e) = self.poll.poll(&mut events, None) {
-                log::trace!("failed to poll, error={:?}", e);
+                log::debug!("failed to poll, error={:?}", e);
             }
 
             log::trace!("handling events, count={:?}", events.iter().count());
@@ -78,19 +80,18 @@ impl<'a> Processor<'a> {
         Ok(())
     }
 
-    fn create_session(&mut self, bytes: &[u8]) -> crate::Result<SessionInfo> {
+    fn retrieve_or_create_session(&mut self, bytes: &[u8]) -> crate::Result<SessionInfo> {
         let session_info = SessionInfo::new(bytes)?;
         if let Some(_) = self.sessions.get(&session_info) {
             return Ok(session_info);
         }
         let token = self.generate_new_token();
-        if let Ok(session) = Session::new(&session_info, &mut self.poll, token) {
-            self.tokens_to_sessions.insert(token, session_info);
-            self.sessions.insert(session_info, session);
-            log::debug!("created session, session={:?}", session_info);
-            return Ok(session_info);
-        }
-        Err(crate::Error::from("failed to create session"))
+        let session = Session::new(&session_info, &mut self.poll, token)?;
+        self.tokens_to_sessions.insert(token, session_info);
+        self.sessions.insert(session_info, session);
+        log::debug!("created session, token={:?} session={:?}", token, session_info);
+        log::debug!("sessions count={}", self.sessions.len());
+        Ok(session_info)
     }
 
     fn destroy_session(&mut self, session_info: &SessionInfo) -> crate::Result<()> {
@@ -105,12 +106,18 @@ impl<'a> Processor<'a> {
             smoltcp_socket.close();
 
             let mio_socket = &mut session.mio_socket;
+            if let Err(err) = mio_socket.deregister_poll(&mut self.poll) {
+                log::error!("failed to deregister socket from poll, error={:?}", err);
+            }
             mio_socket.close();
-            mio_socket.deregister_poll(&mut self.poll)?;
 
-            self.tokens_to_sessions.remove(&session.token);
+            let token = session.token;
+            self.tokens_to_sessions.remove(&token);
 
             self.sessions.remove(session_info);
+
+            log::debug!("destroyed session, token={:?} session={:?}", token, session_info);
+            log::debug!("sessions count={}", self.sessions.len());
         }
         Ok(())
     }
@@ -135,7 +142,7 @@ impl<'a> Processor<'a> {
                 let read_buffer = buffer[..count].to_vec();
                 log_packet("out", &read_buffer);
 
-                let session_info = self.create_session(&read_buffer);
+                let session_info = self.retrieve_or_create_session(&read_buffer);
                 if let Err(error) = session_info {
                     log::info!("failed to create session, error={}", error);
                     continue;

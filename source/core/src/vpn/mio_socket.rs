@@ -26,7 +26,7 @@ impl Socket {
 
         let socket_address = ::socket2::SockAddr::from(remote_address);
 
-        log::debug!("connecting to host, address={:?}", remote_address);
+        log::trace!("connecting to host, address={:?}", remote_address);
 
         if let Err(error) = socket.connect(&socket_address) {
             if error.kind() == std::io::ErrorKind::WouldBlock || error.raw_os_error() == Some(libc::EINPROGRESS) {
@@ -80,7 +80,7 @@ impl Socket {
         match &self.connection {
             Connection::Tcp(connection) => {
                 if let Err(error) = connection.shutdown(Shutdown::Both) {
-                    log::trace!("failed to shutdown tcp stream, error={:?}", error);
+                    log::debug!("failed to shutdown tcp stream, error={:?}", error);
                 }
             }
             Connection::Udp(_) => {

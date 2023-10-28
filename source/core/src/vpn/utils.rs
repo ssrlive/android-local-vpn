@@ -7,7 +7,7 @@ pub fn log_packet(message: &str, bytes: &[u8]) {
             IpProtocol::Tcp => {
                 let tcp_bytes = ip_packet.payload();
                 let tcp_packet = TcpPacket::new_checked(tcp_bytes).unwrap();
-                log::debug!(
+                log::trace!(
                     "[{:?}] len={:?} tcp=[{}] tcp_len={:?} ip=[{}]",
                     message,
                     bytes.len(),
@@ -19,7 +19,7 @@ pub fn log_packet(message: &str, bytes: &[u8]) {
             IpProtocol::Udp => {
                 let udp_bytes = ip_packet.payload();
                 let udp_packet = UdpPacket::new_checked(udp_bytes).unwrap();
-                log::debug!(
+                log::trace!(
                     "[{:?}] len={:?} udp=[{}] udp_len={:?} ip=[{}]",
                     message,
                     bytes.len(),
