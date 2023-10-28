@@ -140,7 +140,7 @@ impl Socket {
 
     fn read_all<R>(reader: &mut R) -> std::io::Result<(Vec<Vec<u8>>, bool)>
     where
-        R: Read,
+        R: Reader,
     {
         let mut bytes: Vec<Vec<u8>> = Vec::new();
         let mut buffer = [0; 1 << 16]; // maximum UDP packet size
@@ -169,33 +169,33 @@ impl Socket {
     }
 }
 
-trait Read {
+trait Reader {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize>;
 }
 
-impl Read for ::mio::net::UdpSocket {
+impl Reader for ::mio::net::UdpSocket {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         self.recv(buf)
     }
 }
 
-impl Read for ::mio::net::TcpStream {
+impl Reader for ::mio::net::TcpStream {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         <::mio::net::TcpStream as std::io::Read>::read(self, buf)
     }
 }
 
-trait Write {
+trait Writer {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize>;
 }
 
-impl Write for ::mio::net::UdpSocket {
+impl Writer for ::mio::net::UdpSocket {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.send(buf)
     }
 }
 
-impl Write for ::mio::net::TcpStream {
+impl Writer for ::mio::net::TcpStream {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         <::mio::net::TcpStream as std::io::Write>::write(self, buf)
     }
