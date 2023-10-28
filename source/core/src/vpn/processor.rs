@@ -76,13 +76,15 @@ impl<'a> Processor<'a> {
                     self.handle_server_event(event)?;
                 }
             }
+
+            self.clearup_expired_sessions();
         }
         Ok(())
     }
 
     fn retrieve_or_create_session(&mut self, bytes: &[u8]) -> crate::Result<SessionInfo> {
         let session_info = SessionInfo::new(bytes)?;
-        if let Some(_) = self.sessions.get(&session_info) {
+        if let Some(_) = self.get_session(&session_info) {
             return Ok(session_info);
         }
         let token = self.generate_new_token();
@@ -148,8 +150,10 @@ impl<'a> Processor<'a> {
                     continue;
                 }
                 let session_info = session_info?;
-                let session = self.sessions.get_mut(&session_info).ok_or(crate::Error::from("handle_tun_event"))?;
-                session.device.receive_data(read_buffer);
+                if let Some(session) = self.get_session_mut(&session_info) {
+                    session.device.receive_data(read_buffer);
+                    session.update_expiry_timestamp();
+                }
 
                 self.write_to_tun(&session_info)?;
                 self.read_from_smoltcp(&session_info)?;
@@ -178,6 +182,11 @@ impl<'a> Processor<'a> {
     fn handle_server_event(&mut self, event: &Event) -> crate::Result<()> {
         if let Some(session_info) = self.tokens_to_sessions.get(&event.token()) {
             let session_info = *session_info;
+
+            if let Some(session) = self.get_session_mut(&session_info) {
+                session.update_expiry_timestamp();
+            }
+
             if event.is_readable() {
                 log::trace!("handle server event read, session={:?}", session_info);
 
@@ -201,7 +210,7 @@ impl<'a> Processor<'a> {
     }
 
     fn read_from_server(&mut self, session_info: &SessionInfo) -> crate::Result<()> {
-        let session = self.sessions.get_mut(session_info).ok_or("read_from_server")?;
+        let session = self.get_session_mut(session_info).ok_or("read_from_server")?;
         log::trace!("read from server, session={:?}", session_info);
 
         let (read_seqs, is_session_closed) = match session.mio_socket.read() {
@@ -234,7 +243,7 @@ impl<'a> Processor<'a> {
     }
 
     fn write_to_server(&mut self, session_info: &SessionInfo) -> crate::Result<()> {
-        if let Some(session) = self.sessions.get_mut(session_info) {
+        if let Some(session) = self.get_session_mut(session_info) {
             log::trace!("write to server, session={:?}", session_info);
             session
                 .buffers
@@ -244,7 +253,7 @@ impl<'a> Processor<'a> {
     }
 
     fn read_from_smoltcp(&mut self, session_info: &SessionInfo) -> crate::Result<()> {
-        if let Some(session) = self.sessions.get_mut(session_info) {
+        if let Some(session) = self.get_session_mut(session_info) {
             log::trace!("read from smoltcp, session={:?}", session_info);
 
             let mut data = [0_u8; crate::MAX_PACKET_SIZE];
@@ -270,7 +279,7 @@ impl<'a> Processor<'a> {
     }
 
     fn write_to_smoltcp(&mut self, session_info: &SessionInfo) -> crate::Result<()> {
-        if let Some(session) = self.sessions.get_mut(session_info) {
+        if let Some(session) = self.get_session_mut(session_info) {
             log::trace!("write to smoltcp, session={:?}", session_info);
 
             let mut socket = session.smoltcp_socket.get(&mut session.sockets)?;
@@ -279,5 +288,36 @@ impl<'a> Processor<'a> {
             }
         }
         Ok(())
+    }
+
+    fn get_session_mut(&mut self, session_info: &SessionInfo) -> Option<&mut Session<'a>> {
+        self.sessions.get_mut(session_info)
+    }
+
+    fn get_session(&self, session_info: &SessionInfo) -> Option<&Session<'a>> {
+        self.sessions.get(session_info)
+    }
+
+    fn is_session_expired(&self, session_info: &SessionInfo) -> bool {
+        if let Some(session) = self.get_session(session_info) {
+            if let Some(expiry) = session.expiry {
+                return expiry < ::std::time::Instant::now();
+            }
+        }
+        false
+    }
+
+    fn clearup_expired_sessions(&mut self) {
+        let mut expired_sessions = vec![];
+        for session_info in self.sessions.keys() {
+            if self.is_session_expired(session_info) {
+                expired_sessions.push(session_info.clone());
+            }
+        }
+        for session_info in expired_sessions {
+            if let Err(error) = self.destroy_session(&session_info) {
+                log::error!("failed to destroy session, error={:?}", error);
+            }
+        }
     }
 }

@@ -12,6 +12,8 @@ use smoltcp::{
     wire::{HardwareAddress, IpAddress, IpCidr, IpProtocol, Ipv4Address},
 };
 
+const UDP_TIMEOUT: u64 = 10; // seconds
+
 pub(crate) struct Session<'a> {
     pub(crate) smoltcp_socket: SmoltcpSocket,
     pub(crate) mio_socket: MioSocket,
@@ -20,12 +22,19 @@ pub(crate) struct Session<'a> {
     pub(crate) interface: Interface,
     pub(crate) sockets: SocketSet<'a>,
     pub(crate) device: VpnDevice,
+    pub(crate) expiry: Option<::std::time::Instant>,
 }
 
 impl<'a> Session<'a> {
     pub(crate) fn new(session_info: &SessionInfo, poll: &mut Poll, token: Token) -> crate::Result<Session<'a>> {
         let mut device = VpnDevice::new();
         let mut sockets = SocketSet::new([]);
+
+        let expiry = if session_info.ip_protocol == IpProtocol::Udp {
+            Some(Self::generate_expiry_timestamp())
+        } else {
+            None
+        };
 
         let session = Session {
             smoltcp_socket: Self::create_smoltcp_socket(session_info, &mut sockets)?,
@@ -35,9 +44,14 @@ impl<'a> Session<'a> {
             interface: Self::create_interface(&mut device)?,
             sockets,
             device,
+            expiry,
         };
 
         Ok(session)
+    }
+
+    pub(crate) fn update_expiry_timestamp(&mut self) {
+        self.expiry.as_mut().map(|expiry| *expiry = Self::generate_expiry_timestamp());
     }
 
     fn create_smoltcp_socket(info: &SessionInfo, sockets: &mut SocketSet<'_>) -> crate::Result<SmoltcpSocket> {
@@ -78,5 +92,9 @@ impl<'a> Session<'a> {
             IpProtocol::Udp => Ok(Buffers::Udp(UdpBuffers::new())),
             _ => Err(crate::Error::UnsupportedProtocol(session_info.ip_protocol)),
         }
+    }
+
+    fn generate_expiry_timestamp() -> ::std::time::Instant {
+        ::std::time::Instant::now() + ::std::time::Duration::from_secs(UDP_TIMEOUT)
     }
 }
