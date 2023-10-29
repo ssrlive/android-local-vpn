@@ -1,7 +1,6 @@
 use clap::Parser;
-use env_logger::Env;
-use smoltcp::phy::{Medium, TunTapInterface};
 use std::ffi::CString;
+#[cfg(unix)]
 use std::os::unix::io::{AsRawFd, RawFd};
 
 static OUT_INTERFACE: std::sync::OnceLock<CString> = std::sync::OnceLock::new();
@@ -19,7 +18,11 @@ struct Args {
     out: String,
 }
 
+#[cfg(target_os = "linux")]
 fn main() {
+    use env_logger::Env;
+    use smoltcp::phy::{Medium, TunTapInterface};
+
     let environment = Env::default().default_filter_or("info");
     env_logger::Builder::from_env(environment).init();
 
@@ -54,10 +57,12 @@ fn main() {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn on_socket_created(socket: RawFd) {
     bind_socket_to_interface(socket, OUT_INTERFACE.get().unwrap());
 }
 
+#[cfg(target_os = "linux")]
 fn bind_socket_to_interface(socket: RawFd, interface: &CString) {
     let result = unsafe {
         libc::setsockopt(
@@ -75,12 +80,20 @@ fn bind_socket_to_interface(socket: RawFd, interface: &CString) {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn set_panic_handler() {
     std::panic::set_hook(Box::new(|panic_info| {
         eprintln!("PANIC [{:?}]", panic_info);
     }));
 }
 
+#[cfg(target_os = "linux")]
 fn remove_panic_handler() {
     let _ = std::panic::take_hook();
+}
+
+#[cfg(not(target_os = "linux"))]
+fn main() {
+    eprintln!("This program is only supported on Linux");
+    OUT_INTERFACE.set(CString::new("dummy".to_string()).unwrap()).unwrap();
 }

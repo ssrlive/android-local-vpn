@@ -10,17 +10,17 @@ pub(crate) struct SessionInfo {
 }
 
 impl SessionInfo {
-    pub(crate) fn new(bytes: &[u8]) -> crate::Result<SessionInfo> {
-        Self::new_ipv4(bytes).or_else(|e| {
+    pub(crate) fn new(bytes: &[u8], is_closed: &mut bool) -> crate::Result<SessionInfo> {
+        Self::new_ipv4(bytes, is_closed).or_else(|e| {
             if let crate::Error::UnsupportedProtocol(_) = e {
                 Err(e)
             } else {
-                Self::new_ipv6(bytes)
+                Self::new_ipv6(bytes, is_closed)
             }
         })
     }
 
-    fn new_ipv4(bytes: &[u8]) -> crate::Result<SessionInfo> {
+    fn new_ipv4(bytes: &[u8], is_closed: &mut bool) -> crate::Result<SessionInfo> {
         if let Ok(ip_packet) = Ipv4Packet::new_checked(&bytes) {
             let protocol = ip_packet.next_header();
             match protocol {
@@ -29,6 +29,7 @@ impl SessionInfo {
                     let packet = TcpPacket::new_checked(payload)?;
                     let source_ip: [u8; 4] = ip_packet.src_addr().as_bytes().try_into()?;
                     let destination_ip: [u8; 4] = ip_packet.dst_addr().as_bytes().try_into()?;
+                    *is_closed = packet.fin() || packet.rst();
                     return Ok(SessionInfo {
                         source: SocketAddr::from((source_ip, packet.src_port())),
                         destination: SocketAddr::from((destination_ip, packet.dst_port())),
@@ -57,7 +58,7 @@ impl SessionInfo {
         Err(crate::Error::from(err))
     }
 
-    fn new_ipv6(bytes: &[u8]) -> crate::Result<SessionInfo> {
+    fn new_ipv6(bytes: &[u8], is_closed: &mut bool) -> crate::Result<SessionInfo> {
         if let Ok(ip_packet) = Ipv6Packet::new_checked(&bytes) {
             let protocol = ip_packet.next_header();
             match protocol {
@@ -66,6 +67,7 @@ impl SessionInfo {
                     let packet = TcpPacket::new_checked(payload)?;
                     let source_ip: [u8; 16] = ip_packet.src_addr().as_bytes().try_into()?;
                     let destination_ip: [u8; 16] = ip_packet.dst_addr().as_bytes().try_into()?;
+                    *is_closed = packet.fin() || packet.rst();
                     return Ok(SessionInfo {
                         source: SocketAddr::from((source_ip, packet.src_port())),
                         destination: SocketAddr::from((destination_ip, packet.dst_port())),

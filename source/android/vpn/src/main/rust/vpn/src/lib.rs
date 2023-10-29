@@ -44,6 +44,7 @@ pub mod android {
     #[no_mangle]
     pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onStartVpn(_: JNIEnv, _: JClass, file_descriptor: i32) {
         log::trace!("onStartVpn, pid={}, fd={}", std::process::id(), file_descriptor);
+        #[cfg(unix)]
         tuncore::tun_callbacks::set_socket_created_callback(Some(on_socket_created));
         socket_protector!().start();
         tuncore::tun::start(file_descriptor);
@@ -57,6 +58,7 @@ pub mod android {
         log::trace!("onStopVpn, pid={}", std::process::id());
         tuncore::tun::stop();
         socket_protector!().stop();
+        #[cfg(unix)]
         tuncore::tun_callbacks::set_socket_created_callback(None);
     }
 
@@ -70,6 +72,7 @@ pub mod android {
         let _ = std::panic::take_hook();
     }
 
+    #[allow(dead_code)]
     fn on_socket_created(socket: i32) {
         socket_protector!().protect_socket(socket);
     }

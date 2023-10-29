@@ -67,9 +67,10 @@ impl<'a> Processor<'a> {
         registry.register(&mut SourceFd(&self.file_descriptor), TOKEN_TUN, Interest::READABLE)?;
 
         let mut events = Events::with_capacity(EVENTS_CAPACITY);
+        let timeout = Some(std::time::Duration::from_secs(crate::POLL_TIMEOUT));
 
         'poll_loop: loop {
-            if let Err(e) = self.poll.poll(&mut events, None) {
+            if let Err(e) = self.poll.poll(&mut events, timeout) {
                 log::debug!("failed to poll, error={:?}", e);
             }
 
@@ -87,12 +88,13 @@ impl<'a> Processor<'a> {
             }
 
             self.clearup_expired_sessions();
+            log::debug!("sessions count={}", self.sessions.len());
         }
         Ok(())
     }
 
-    fn retrieve_or_create_session(&mut self, bytes: &[u8]) -> crate::Result<SessionInfo> {
-        let session_info = SessionInfo::new(bytes)?;
+    fn retrieve_or_create_session(&mut self, bytes: &[u8], is_closed: &mut bool) -> crate::Result<SessionInfo> {
+        let session_info = SessionInfo::new(bytes, is_closed)?;
         if self.get_session(&session_info).is_some() {
             return Ok(session_info);
         }
@@ -101,7 +103,6 @@ impl<'a> Processor<'a> {
         self.tokens_to_sessions.insert(token, session_info);
         self.sessions.insert(session_info, session);
         log::debug!("created session, token={:?} session={:?}", token, session_info);
-        log::debug!("sessions count={}", self.sessions.len());
         Ok(session_info)
     }
 
@@ -128,7 +129,6 @@ impl<'a> Processor<'a> {
             self.sessions.remove(session_info);
 
             log::debug!("destroyed session, token={:?} session={:?}", token, session_info);
-            log::debug!("sessions count={}", self.sessions.len());
         }
         Ok(())
     }
@@ -158,7 +158,8 @@ impl<'a> Processor<'a> {
                 let read_buffer = buffer[..count].to_vec();
                 log_packet("out", &read_buffer);
 
-                let session_info = self.retrieve_or_create_session(&read_buffer);
+                let mut is_closed = false;
+                let session_info = self.retrieve_or_create_session(&read_buffer, &mut is_closed);
                 if let Err(error) = session_info {
                     log::info!("failed to create session, error={}", error);
                     continue;
@@ -172,6 +173,10 @@ impl<'a> Processor<'a> {
                 self.write_to_tun(&session_info)?;
                 self.read_from_smoltcp(&session_info)?;
                 self.write_to_server(&session_info)?;
+
+                if is_closed {
+                    self.destroy_session(&session_info)?;
+                }
             }
         }
         Ok(())

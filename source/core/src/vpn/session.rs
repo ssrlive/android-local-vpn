@@ -12,8 +12,6 @@ use smoltcp::{
     wire::{HardwareAddress, IpAddress, IpCidr, IpProtocol, Ipv4Address},
 };
 
-const UDP_TIMEOUT: u64 = 10; // seconds
-
 pub(crate) struct Session<'a> {
     pub(crate) smoltcp_socket: SmoltcpSocket,
     pub(crate) mio_socket: MioSocket,
@@ -97,6 +95,6 @@ impl<'a> Session<'a> {
     }
 
     fn generate_expiry_timestamp() -> ::std::time::Instant {
-        ::std::time::Instant::now() + ::std::time::Duration::from_secs(UDP_TIMEOUT)
+        ::std::time::Instant::now() + ::std::time::Duration::from_secs(crate::UDP_TIMEOUT)
     }
 }
