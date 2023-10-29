@@ -235,14 +235,15 @@ impl<'a> Processor<'a> {
         let session = self.get_session_mut(session_info).ok_or("read_from_server")?;
         log::trace!("read from server, session={:?}", session_info);
 
-        let (read_seqs, is_session_closed) = match session.mio_socket.read() {
+        let mut is_closed = false;
+        let read_seqs = match session.mio_socket.read(&mut is_closed) {
             Ok(result) => result,
             Err(error) => {
                 assert_ne!(error.kind(), ErrorKind::WouldBlock);
                 if error.kind() != ErrorKind::ConnectionReset {
                     log::error!("failed to read from tcp stream, error={:?}", error);
                 }
-                (vec![], true)
+                vec![]
             }
         };
 
@@ -257,7 +258,7 @@ impl<'a> Processor<'a> {
             }
         }
 
-        if is_session_closed {
+        if is_closed {
             self.destroy_session(session_info)?;
         }
 

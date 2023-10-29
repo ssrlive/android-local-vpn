@@ -72,10 +72,10 @@ impl Socket {
         }
     }
 
-    pub(crate) fn read(&mut self) -> std::io::Result<(Vec<Vec<u8>>, bool)> {
+    pub(crate) fn read(&mut self, is_closed: &mut bool) -> std::io::Result<Vec<Vec<u8>>> {
         match &mut self.connection {
-            Connection::Tcp(connection) => Self::read_all(connection),
-            Connection::Udp(connection) => Self::read_all(connection),
+            Connection::Tcp(connection) => Self::read_all(connection, is_closed),
+            Connection::Udp(connection) => Self::read_all(connection, is_closed),
         }
     }
 
@@ -149,18 +149,17 @@ impl Socket {
         }
     }
 
-    fn read_all<R>(reader: &mut R) -> std::io::Result<(Vec<Vec<u8>>, bool)>
+    fn read_all<R>(reader: &mut R, is_closed: &mut bool) -> std::io::Result<Vec<Vec<u8>>>
     where
         R: Reader,
     {
         let mut bytes: Vec<Vec<u8>> = Vec::new();
         let mut buffer = [0; 1 << 16]; // maximum UDP packet size
-        let mut is_closed = false;
         loop {
             match reader.read(&mut buffer[..]) {
                 Ok(count) => {
                     if count == 0 {
-                        is_closed = true;
+                        *is_closed = true;
                         break;
                     }
                     // bytes.extend_from_slice(&buffer[..count]);
@@ -176,7 +175,7 @@ impl Socket {
                 }
             }
         }
-        Ok((bytes, is_closed))
+        Ok(bytes)
     }
 }
 
