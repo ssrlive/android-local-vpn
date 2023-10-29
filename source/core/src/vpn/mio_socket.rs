@@ -2,10 +2,11 @@
 use crate::tun_callbacks::on_socket_created;
 use mio::{Interest, Poll, Token};
 use smoltcp::wire::{IpProtocol, IpVersion};
-use std::{
-    net::{Shutdown, SocketAddr},
-    os::unix::io::{AsRawFd, FromRawFd},
-};
+use std::net::{Shutdown, SocketAddr};
+#[cfg(unix)]
+use std::os::unix::io::{AsRawFd, FromRawFd};
+#[cfg(windows)]
+use std::os::windows::io::{AsRawSocket, FromRawSocket};
 
 #[derive(Debug)]
 pub(crate) struct Socket {
@@ -124,11 +125,21 @@ impl Socket {
     fn create_connection(ip_protocol: &IpProtocol, socket: &::socket2::Socket) -> std::io::Result<Connection> {
         match ip_protocol {
             IpProtocol::Tcp => {
+                #[cfg(unix)]
                 let tcp_stream = unsafe { ::mio::net::TcpStream::from_raw_fd(socket.as_raw_fd()) };
+
+                #[cfg(windows)]
+                let tcp_stream = unsafe { ::mio::net::TcpStream::from_raw_socket(socket.as_raw_socket()) };
+
                 Ok(Connection::Tcp(tcp_stream))
             }
             IpProtocol::Udp => {
+                #[cfg(unix)]
                 let udp_socket = unsafe { ::mio::net::UdpSocket::from_raw_fd(socket.as_raw_fd()) };
+
+                #[cfg(windows)]
+                let udp_socket = unsafe { ::mio::net::UdpSocket::from_raw_socket(socket.as_raw_socket()) };
+
                 Ok(Connection::Udp(udp_socket))
             }
             _ => {

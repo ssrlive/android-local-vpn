@@ -51,7 +51,9 @@ impl<'a> Session<'a> {
     }
 
     pub(crate) fn update_expiry_timestamp(&mut self) {
-        self.expiry.as_mut().map(|expiry| *expiry = Self::generate_expiry_timestamp());
+        if let Some(expiry) = self.expiry.as_mut() {
+            *expiry = Self::generate_expiry_timestamp();
+        }
     }
 
     fn create_smoltcp_socket(info: &SessionInfo, sockets: &mut SocketSet<'_>) -> crate::Result<SmoltcpSocket> {

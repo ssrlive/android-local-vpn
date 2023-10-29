@@ -53,7 +53,7 @@ impl SessionInfo {
                 }
             }
         }
-        let err = format!("failed to create session info, len={:?}", bytes.len());
+        let err = format!("neither ipv4 nor ipv6 packet len={:?}", bytes.len());
         Err(crate::Error::from(err))
     }
 
@@ -90,7 +90,7 @@ impl SessionInfo {
                 }
             }
         }
-        let err = format!("failed to create session info, len={:?}", bytes.len());
+        let err = format!("neither ipv4 nor ipv6 packet len={:?}", bytes.len());
         Err(crate::Error::from(err))
     }
 }

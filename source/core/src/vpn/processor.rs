@@ -4,12 +4,15 @@ use crate::vpn::{
     session_info::SessionInfo,
     utils::log_packet,
 };
-use mio::{event::Event, unix::SourceFd, Events, Interest, Token, Waker};
+#[cfg(target_family = "unix")]
+use mio::unix::SourceFd;
+use mio::{event::Event, Events, Interest, Token, Waker};
 use smoltcp::time::Instant;
+#[cfg(target_family = "unix")]
+use std::os::unix::io::FromRawFd;
 use std::{
     collections::HashMap,
     io::{ErrorKind, Read, Write},
-    os::unix::io::FromRawFd,
 };
 
 type Sessions<'a> = HashMap<SessionInfo, Session<'a>>;
@@ -22,7 +25,9 @@ const TOKEN_WAKER: Token = Token(1);
 const TOKEN_START_ID: usize = 10;
 
 pub(crate) struct Processor<'a> {
+    #[cfg(target_family = "unix")]
     file_descriptor: i32,
+    #[cfg(target_family = "unix")]
     file: std::fs::File,
     poll: mio::Poll,
     sessions: Sessions<'a>,
@@ -33,7 +38,9 @@ pub(crate) struct Processor<'a> {
 impl<'a> Processor<'a> {
     pub(crate) fn new(file_descriptor: i32) -> std::io::Result<Processor<'a>> {
         Ok(Processor {
+            #[cfg(target_family = "unix")]
             file_descriptor,
+            #[cfg(target_family = "unix")]
             file: unsafe { std::fs::File::from_raw_fd(file_descriptor) },
             poll: mio::Poll::new()?,
             sessions: Sessions::new(),
@@ -54,7 +61,9 @@ impl<'a> Processor<'a> {
     pub(crate) fn run(&mut self) -> std::io::Result<()> {
         log::info!("starting vpn");
 
+        #[cfg(target_family = "unix")]
         let registry = self.poll.registry();
+        #[cfg(target_family = "unix")]
         registry.register(&mut SourceFd(&self.file_descriptor), TOKEN_TUN, Interest::READABLE)?;
 
         let mut events = Events::with_capacity(EVENTS_CAPACITY);
@@ -84,7 +93,7 @@ impl<'a> Processor<'a> {
 
     fn retrieve_or_create_session(&mut self, bytes: &[u8]) -> crate::Result<SessionInfo> {
         let session_info = SessionInfo::new(bytes)?;
-        if let Some(_) = self.get_session(&session_info) {
+        if self.get_session(&session_info).is_some() {
             return Ok(session_info);
         }
         let token = self.generate_new_token();
@@ -130,7 +139,12 @@ impl<'a> Processor<'a> {
 
             let mut buffer = [0_u8; crate::MAX_PACKET_SIZE];
             loop {
+                #[cfg(target_family = "unix")]
                 let count = self.file.read(&mut buffer);
+                #[cfg(target_family = "windows")]
+                let count: Result<usize, std::io::Error> = Ok(0_usize);
+                #[cfg(target_family = "windows")]
+                assert!(false, "windows not supported yet");
                 if let Err(error) = count {
                     if error.kind() != ErrorKind::WouldBlock {
                         log::error!("failed to read from tun, error={:?}", error);
@@ -173,7 +187,10 @@ impl<'a> Processor<'a> {
 
             while let Some(bytes) = session.device.pop_data() {
                 log_packet("in", &bytes);
+                #[cfg(target_family = "unix")]
                 self.file.write_all(&bytes[..])?;
+                #[cfg(target_family = "windows")]
+                assert!(false, "windows not supported yet");
             }
         }
         Ok(())
@@ -311,7 +328,7 @@ impl<'a> Processor<'a> {
         let mut expired_sessions = vec![];
         for session_info in self.sessions.keys() {
             if self.is_session_expired(session_info) {
-                expired_sessions.push(session_info.clone());
+                expired_sessions.push(*session_info);
             }
         }
         for session_info in expired_sessions {
