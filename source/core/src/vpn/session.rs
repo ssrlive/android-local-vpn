@@ -20,7 +20,7 @@ pub(crate) struct Session<'a> {
     pub(crate) interface: Interface,
     pub(crate) sockets: SocketSet<'a>,
     pub(crate) device: VpnDevice,
-    pub(crate) expiry: Option<::std::time::Instant>,
+    expiry: Option<::std::time::Instant>,
 }
 
 impl<'a> Session<'a> {
@@ -29,7 +29,7 @@ impl<'a> Session<'a> {
         let mut sockets = SocketSet::new([]);
 
         let expiry = if session_info.ip_protocol == IpProtocol::Udp {
-            Some(Self::generate_expiry_timestamp())
+            Some(Self::generate_expiry_timestamp(crate::UDP_TIMEOUT))
         } else {
             None
         };
@@ -48,9 +48,19 @@ impl<'a> Session<'a> {
         Ok(session)
     }
 
-    pub(crate) fn update_expiry_timestamp(&mut self) {
-        if let Some(expiry) = self.expiry.as_mut() {
-            *expiry = Self::generate_expiry_timestamp();
+    pub(crate) fn update_expiry_timestamp(&mut self, force_set: bool) {
+        if force_set {
+            self.expiry = Some(Self::generate_expiry_timestamp(crate::TCP_TIMEOUT));
+        } else if let Some(expiry) = self.expiry.as_mut() {
+            *expiry = Self::generate_expiry_timestamp(crate::UDP_TIMEOUT);
+        }
+    }
+
+    pub(crate) fn is_expired(&self) -> bool {
+        if let Some(expiry) = self.expiry {
+            expiry <= ::std::time::Instant::now()
+        } else {
+            false
         }
     }
 
@@ -94,7 +104,7 @@ impl<'a> Session<'a> {
         }
     }
 
-    fn generate_expiry_timestamp() -> ::std::time::Instant {
-        ::std::time::Instant::now() + ::std::time::Duration::from_secs(crate::UDP_TIMEOUT)
+    fn generate_expiry_timestamp(secs: u64) -> ::std::time::Instant {
+        ::std::time::Instant::now() + ::std::time::Duration::from_secs(secs)
     }
 }

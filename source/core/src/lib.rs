@@ -4,6 +4,7 @@ pub use error::{Error, Result};
 
 pub(crate) const MAX_PACKET_SIZE: usize = 0xffff;
 pub(crate) const UDP_TIMEOUT: u64 = 10; // seconds
+pub(crate) const TCP_TIMEOUT: u64 = 1; // seconds
 pub(crate) const POLL_TIMEOUT: u64 = 60; // seconds
 
 pub mod tun {

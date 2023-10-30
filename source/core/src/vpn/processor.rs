@@ -167,15 +167,15 @@ impl<'a> Processor<'a> {
                 let session_info = session_info?;
                 if let Some(session) = self.get_session_mut(&session_info) {
                     session.device.receive_data(read_buffer);
-                    session.update_expiry_timestamp();
                 }
 
                 self.write_to_tun(&session_info)?;
                 self.read_from_smoltcp(&session_info)?;
                 self.write_to_server(&session_info)?;
 
-                if is_closed {
-                    self.destroy_session(&session_info)?;
+                if let Some(session) = self.get_session_mut(&session_info) {
+                    // delay tcp socket close to avoid RST packet
+                    session.update_expiry_timestamp(is_closed);
                 }
             }
         }
@@ -205,14 +205,11 @@ impl<'a> Processor<'a> {
         if let Some(session_info) = self.tokens_to_sessions.get(&event.token()) {
             let session_info = *session_info;
 
-            if let Some(session) = self.get_session_mut(&session_info) {
-                session.update_expiry_timestamp();
-            }
-
+            let mut is_closed = false;
             if event.is_readable() {
                 log::trace!("handle server event read, session={:?}", session_info);
 
-                self.read_from_server(&session_info)?;
+                self.read_from_server(&session_info, &mut is_closed)?;
                 self.write_to_smoltcp(&session_info)?;
                 self.write_to_tun(&session_info)?;
             }
@@ -222,44 +219,39 @@ impl<'a> Processor<'a> {
                 self.read_from_smoltcp(&session_info)?;
                 self.write_to_server(&session_info)?;
             }
-            if event.is_read_closed() || event.is_write_closed() {
-                log::trace!("handle server event closed, session={:?}", session_info);
-
-                self.destroy_session(&session_info)?;
+            if let Some(session) = self.get_session_mut(&session_info) {
+                let force_set = event.is_read_closed() || event.is_write_closed() || is_closed;
+                session.update_expiry_timestamp(force_set);
             }
         }
         Ok(())
     }
 
-    fn read_from_server(&mut self, session_info: &SessionInfo) -> crate::Result<()> {
-        let session = self.get_session_mut(session_info).ok_or("read_from_server")?;
-        log::trace!("read from server, session={:?}", session_info);
+    fn read_from_server(&mut self, session_info: &SessionInfo, is_closed: &mut bool) -> crate::Result<()> {
+        if let Some(session) = self.get_session_mut(session_info) {
+            log::trace!("read from server, session={:?}", session_info);
 
-        let mut is_closed = false;
-        let read_seqs = match session.mio_socket.read(&mut is_closed) {
-            Ok(result) => result,
-            Err(error) => {
-                assert_ne!(error.kind(), ErrorKind::WouldBlock);
-                if error.kind() != ErrorKind::ConnectionReset {
-                    log::error!("failed to read from tcp stream, error={:?}", error);
+            let read_seqs = match session.mio_socket.read(is_closed) {
+                Ok(result) => result,
+                Err(error) => {
+                    assert_ne!(error.kind(), ErrorKind::WouldBlock);
+                    if error.kind() != ErrorKind::ConnectionReset {
+                        log::error!("failed to read from tcp stream, error={:?}", error);
+                    }
+                    vec![]
                 }
-                vec![]
-            }
-        };
+            };
 
-        for bytes in read_seqs {
-            if !bytes.is_empty() {
-                // here exchange the business logic data
-                let event = IncomingDataEvent {
-                    direction: IncomingDirection::FromServer,
-                    buffer: &bytes[..],
-                };
-                session.buffers.recv_data(event);
+            for bytes in read_seqs {
+                if !bytes.is_empty() {
+                    // here exchange the business logic data
+                    let event = IncomingDataEvent {
+                        direction: IncomingDirection::FromServer,
+                        buffer: &bytes[..],
+                    };
+                    session.buffers.recv_data(event);
+                }
             }
-        }
-
-        if is_closed {
-            self.destroy_session(session_info)?;
         }
 
         Ok(())
@@ -323,11 +315,10 @@ impl<'a> Processor<'a> {
 
     fn is_session_expired(&self, session_info: &SessionInfo) -> bool {
         if let Some(session) = self.get_session(session_info) {
-            if let Some(expiry) = session.expiry {
-                return expiry < ::std::time::Instant::now();
-            }
+            session.is_expired()
+        } else {
+            false
         }
-        false
     }
 
     fn clearup_expired_sessions(&mut self) {
