@@ -1,5 +1,5 @@
 use crate::vpn::{
-    buffers::{Buffers, TcpBuffers, UdpBuffers},
+    buffers::{Buffers, IncomingDataEvent, IncomingDirection, OutgoingDirection, TcpBuffers, UdpBuffers},
     mio_socket::Socket as MioSocket,
     session_info::SessionInfo,
     smoltcp_socket::Socket as SmoltcpSocket,
@@ -13,14 +13,15 @@ use smoltcp::{
 };
 
 pub(crate) struct Session<'a> {
-    pub(crate) smoltcp_socket: SmoltcpSocket,
-    pub(crate) mio_socket: MioSocket,
+    smoltcp_socket: SmoltcpSocket,
+    mio_socket: MioSocket,
     pub(crate) token: Token,
-    pub(crate) buffers: Buffers,
+    buffers: Buffers,
     pub(crate) interface: Interface,
     pub(crate) sockets: SocketSet<'a>,
     pub(crate) device: VpnDevice,
     expiry: Option<::std::time::Instant>,
+    session_info: SessionInfo,
 }
 
 impl<'a> Session<'a> {
@@ -43,9 +44,90 @@ impl<'a> Session<'a> {
             sockets,
             device,
             expiry,
+            session_info: *session_info,
         };
 
         Ok(session)
+    }
+
+    pub(crate) fn destroy(&mut self, poll: &mut Poll) -> crate::Result<()> {
+        let mut smoltcp_socket = self.smoltcp_socket.get(&mut self.sockets)?;
+        smoltcp_socket.close();
+
+        let mio_socket = &mut self.mio_socket;
+        if let Err(err) = mio_socket.deregister_poll(poll) {
+            log::error!("failed to deregister socket from poll, error={:?}", err);
+        }
+        mio_socket.close();
+
+        Ok(())
+    }
+
+    pub(crate) fn read_from_smoltcp(&mut self) -> crate::Result<()> {
+        log::trace!("read from smoltcp, session={:?}", self.session_info);
+
+        let mut data = [0_u8; crate::MAX_PACKET_SIZE];
+        loop {
+            let mut socket = self.smoltcp_socket.get(&mut self.sockets)?;
+            if !socket.can_receive() {
+                break;
+            }
+            let data_len = socket.receive(&mut data);
+            if let Err(e) = data_len {
+                log::error!("failed to receive from smoltcp socket, error={:?}", e);
+                break;
+            }
+            let data_len = data_len?;
+            let event = IncomingDataEvent {
+                direction: IncomingDirection::FromClient,
+                buffer: &data[..data_len],
+            };
+            self.buffers.recv_data(event);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn write_to_smoltcp(&mut self) -> crate::Result<()> {
+        log::trace!("write to smoltcp, session={:?}", self.session_info);
+
+        let mut socket = self.smoltcp_socket.get(&mut self.sockets)?;
+        if socket.can_send() {
+            self.buffers.consume_data(OutgoingDirection::ToClient, |b| socket.send(b));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn read_from_server(&mut self, is_closed: &mut bool) -> crate::Result<()> {
+        log::trace!("read from server, session={:?}", self.session_info);
+        let read_seqs = match self.mio_socket.read(is_closed) {
+            Ok(result) => result,
+            Err(error) => {
+                assert_ne!(error.kind(), std::io::ErrorKind::WouldBlock);
+                if error.kind() != std::io::ErrorKind::ConnectionReset {
+                    log::error!("failed to read from tcp stream, error={:?}", error);
+                }
+                vec![]
+            }
+        };
+
+        for bytes in read_seqs {
+            if !bytes.is_empty() {
+                // here exchange the business logic data
+                let event = IncomingDataEvent {
+                    direction: IncomingDirection::FromServer,
+                    buffer: &bytes[..],
+                };
+                self.buffers.recv_data(event);
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn write_to_server(&mut self) -> crate::Result<()> {
+        log::trace!("write to server, session={:?}", self.session_info);
+        self.buffers
+            .consume_data(OutgoingDirection::ToServer, |b| self.mio_socket.write(b).map_err(|e| e.into()));
+        Ok(())
     }
 
     pub(crate) fn update_expiry_timestamp(&mut self, force_set: bool) {

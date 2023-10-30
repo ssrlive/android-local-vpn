@@ -1,9 +1,4 @@
-use crate::vpn::{
-    buffers::{IncomingDataEvent, IncomingDirection, OutgoingDirection},
-    session::Session,
-    session_info::SessionInfo,
-    utils::log_packet,
-};
+use crate::vpn::{session::Session, session_info::SessionInfo, utils::log_packet};
 #[cfg(target_family = "unix")]
 use mio::unix::SourceFd;
 use mio::{event::Event, Events, Interest, Token, Waker};
@@ -113,22 +108,10 @@ impl<'a> Processor<'a> {
         self.write_to_smoltcp(session_info)?;
         self.write_to_tun(session_info)?;
 
-        if let Some(session) = self.sessions.get_mut(session_info) {
-            let mut smoltcp_socket = session.smoltcp_socket.get(&mut session.sockets)?;
-            smoltcp_socket.close();
-
-            let mio_socket = &mut session.mio_socket;
-            if let Err(err) = mio_socket.deregister_poll(&mut self.poll) {
-                log::error!("failed to deregister socket from poll, error={:?}", err);
-            }
-            mio_socket.close();
-
-            let token = session.token;
-            self.tokens_to_sessions.remove(&token);
-
-            self.sessions.remove(session_info);
-
-            log::debug!("destroyed session, token={:?} session={:?}", token, session_info);
+        if let Some(mut session) = self.sessions.remove(session_info) {
+            session.destroy(&mut self.poll)?;
+            self.tokens_to_sessions.remove(&session.token);
+            log::debug!("destroyed session, token={:?} session={:?}", session.token, session_info);
         }
         Ok(())
     }
@@ -229,78 +212,28 @@ impl<'a> Processor<'a> {
 
     fn read_from_server(&mut self, session_info: &SessionInfo, is_closed: &mut bool) -> crate::Result<()> {
         if let Some(session) = self.get_session_mut(session_info) {
-            log::trace!("read from server, session={:?}", session_info);
-
-            let read_seqs = match session.mio_socket.read(is_closed) {
-                Ok(result) => result,
-                Err(error) => {
-                    assert_ne!(error.kind(), ErrorKind::WouldBlock);
-                    if error.kind() != ErrorKind::ConnectionReset {
-                        log::error!("failed to read from tcp stream, error={:?}", error);
-                    }
-                    vec![]
-                }
-            };
-
-            for bytes in read_seqs {
-                if !bytes.is_empty() {
-                    // here exchange the business logic data
-                    let event = IncomingDataEvent {
-                        direction: IncomingDirection::FromServer,
-                        buffer: &bytes[..],
-                    };
-                    session.buffers.recv_data(event);
-                }
-            }
+            session.read_from_server(is_closed)?;
         }
-
         Ok(())
     }
 
     fn write_to_server(&mut self, session_info: &SessionInfo) -> crate::Result<()> {
         if let Some(session) = self.get_session_mut(session_info) {
-            log::trace!("write to server, session={:?}", session_info);
-            session
-                .buffers
-                .consume_data(OutgoingDirection::ToServer, |b| session.mio_socket.write(b).map_err(|e| e.into()));
+            session.write_to_server()?;
         }
         Ok(())
     }
 
     fn read_from_smoltcp(&mut self, session_info: &SessionInfo) -> crate::Result<()> {
         if let Some(session) = self.get_session_mut(session_info) {
-            log::trace!("read from smoltcp, session={:?}", session_info);
-
-            let mut data = [0_u8; crate::MAX_PACKET_SIZE];
-            loop {
-                let mut socket = session.smoltcp_socket.get(&mut session.sockets)?;
-                if !socket.can_receive() {
-                    break;
-                }
-                let data_len = socket.receive(&mut data);
-                if let Err(e) = data_len {
-                    log::error!("failed to receive from smoltcp socket, error={:?}", e);
-                    break;
-                }
-                let data_len = data_len?;
-                let event = IncomingDataEvent {
-                    direction: IncomingDirection::FromClient,
-                    buffer: &data[..data_len],
-                };
-                session.buffers.recv_data(event);
-            }
+            session.read_from_smoltcp()?;
         }
         Ok(())
     }
 
     fn write_to_smoltcp(&mut self, session_info: &SessionInfo) -> crate::Result<()> {
         if let Some(session) = self.get_session_mut(session_info) {
-            log::trace!("write to smoltcp, session={:?}", session_info);
-
-            let mut socket = session.smoltcp_socket.get(&mut session.sockets)?;
-            if socket.can_send() {
-                session.buffers.consume_data(OutgoingDirection::ToClient, |b| socket.send(b));
-            }
+            session.write_to_smoltcp()?;
         }
         Ok(())
     }
