@@ -13,13 +13,13 @@ use smoltcp::{
 };
 
 pub(crate) struct Session<'a> {
+    pub(crate) token: Token,
     smoltcp_socket: SmoltcpSocket,
     mio_socket: MioSocket,
-    pub(crate) token: Token,
     buffers: Buffers,
-    pub(crate) interface: Interface,
-    pub(crate) sockets: SocketSet<'a>,
-    pub(crate) device: VpnDevice,
+    interface: Interface,
+    sockets: SocketSet<'a>,
+    device: VpnDevice,
     expiry: Option<::std::time::Instant>,
     session_info: SessionInfo,
 }
@@ -94,6 +94,28 @@ impl<'a> Session<'a> {
         if socket.can_send() {
             self.buffers.consume_data(OutgoingDirection::ToClient, |b| socket.send(b));
         }
+        Ok(())
+    }
+
+    pub(crate) fn store_tun_data(&mut self, raw_ip_packet: Vec<u8>) {
+        crate::vpn::utils::log_packet("out", &raw_ip_packet);
+        self.device.store_data(raw_ip_packet);
+    }
+
+    pub(crate) fn write_to_tun(&mut self, tun: &mut impl std::io::Write) -> crate::Result<()> {
+        log::trace!("write to tun, session={:?}", self.session_info);
+
+        // cook the packets in smoltcp framework.
+        if !self.interface.poll(Instant::now(), &mut self.device, &mut self.sockets) {
+            log::trace!("no readiness of socket might have changed. {:?}", self.session_info);
+        }
+
+        // write the cooked data(raw IP packets) to tun.
+        while let Some(bytes) = self.device.pop_data() {
+            crate::vpn::utils::log_packet("in", &bytes);
+            tun.write_all(&bytes[..])?;
+        }
+
         Ok(())
     }
 

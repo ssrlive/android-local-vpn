@@ -1,13 +1,12 @@
-use crate::vpn::{session::Session, session_info::SessionInfo, utils::log_packet};
+use crate::vpn::{session::Session, session_info::SessionInfo};
 #[cfg(target_family = "unix")]
 use mio::unix::SourceFd;
 use mio::{event::Event, Events, Interest, Token, Waker};
-use smoltcp::time::Instant;
 #[cfg(target_family = "unix")]
 use std::os::unix::io::FromRawFd;
 use std::{
     collections::HashMap,
-    io::{ErrorKind, Read, Write},
+    io::{ErrorKind, Read},
 };
 
 type Sessions<'a> = HashMap<SessionInfo, Session<'a>>;
@@ -139,7 +138,6 @@ impl<'a> Processor<'a> {
                     break;
                 }
                 let read_buffer = buffer[..count].to_vec();
-                log_packet("out", &read_buffer);
 
                 let mut is_closed = false;
                 let session_info = self.retrieve_or_create_session(&read_buffer, &mut is_closed);
@@ -149,7 +147,7 @@ impl<'a> Processor<'a> {
                 }
                 let session_info = session_info?;
                 if let Some(session) = self.get_session_mut(&session_info) {
-                    session.device.receive_data(read_buffer);
+                    session.store_tun_data(read_buffer);
                 }
 
                 self.write_to_tun(&session_info)?;
@@ -167,19 +165,10 @@ impl<'a> Processor<'a> {
 
     fn write_to_tun(&mut self, session_info: &SessionInfo) -> crate::Result<()> {
         if let Some(session) = self.sessions.get_mut(session_info) {
-            log::trace!("write to tun device, session={:?}", session_info);
-
-            if !session.interface.poll(Instant::now(), &mut session.device, &mut session.sockets) {
-                log::trace!("no readiness of socket might have changed. {:?}", session_info);
-            }
-
-            while let Some(bytes) = session.device.pop_data() {
-                log_packet("in", &bytes);
-                #[cfg(target_family = "unix")]
-                self.file.write_all(&bytes[..])?;
-                #[cfg(target_family = "windows")]
-                assert!(false, "windows not supported yet");
-            }
+            #[cfg(target_family = "unix")]
+            session.write_to_tun(&mut self.file)?;
+            #[cfg(target_family = "windows")]
+            assert!(false, "windows not supported yet");
         }
         Ok(())
     }

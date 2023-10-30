@@ -18,7 +18,7 @@ impl VpnDevice {
         }
     }
 
-    pub(crate) fn receive_data(&mut self, bytes: Vec<u8>) {
+    pub(crate) fn store_data(&mut self, bytes: Vec<u8>) {
         self.rx_queue.push_back(bytes);
     }
 
