@@ -30,7 +30,7 @@ android {
     namespace 'com.github.jonforshort.androidlocalvpn.vpn'
 
     compileSdk 33
-    ndkVersion "25.2.9519653"
+    ndkVersion "25.1.8937393"
 
     defaultConfig {
         minSdk 26
@@ -65,7 +65,7 @@ dependencies {
 apply plugin: 'org.mozilla.rust-android-gradle.rust-android'
 
 cargo {
-    module = "src/main/rust/vpn"
+    module = "../.."
     libname = "vpn"
     targets = ["arm64", "arm", "x86_64", "x86"]
 }

@@ -1,6 +1,6 @@
 use clap::Parser;
 use std::ffi::CString;
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 use std::os::unix::io::{AsRawFd, RawFd};
 
 static OUT_INTERFACE: std::sync::OnceLock<CString> = std::sync::OnceLock::new();

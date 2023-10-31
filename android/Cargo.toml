@@ -13,4 +13,4 @@ jni = { version = "0.21", default-features = false }
 lazy_static = "1.4"
 libc = "0.2"
 log = "0.4"
-tuncore = { path = "../../../../../../core" }
+tuncore = { path = "../core" }

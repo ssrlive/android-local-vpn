@@ -13,7 +13,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: ./source/android
+        working-directory: .
 
     steps:
     - name: Checkout Source Code
@@ -28,7 +28,7 @@ jobs:
       run: rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
 
     - name: Set Up Android NDK
-      run: $ANDROID_SDK_ROOT/tools/bin/sdkmanager --install "ndk;25.2.9519653"
+      run: $ANDROID_SDK_ROOT/tools/bin/sdkmanager --install "ndk;25.1.8937393"
 
     - name: Set Up JDK
       uses: actions/setup-java@v3
