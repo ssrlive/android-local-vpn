@@ -5,8 +5,16 @@ pub use error::{Error, Result};
 pub(crate) const MAX_PACKET_SIZE: usize = 0xffff;
 pub(crate) const UDP_TIMEOUT: u64 = 10; // seconds
 pub(crate) const TCP_TIMEOUT: u64 = 1; // seconds
+
+#[cfg(not(debug_assertions))]
 pub(crate) const TCP_MAX_LIFETIME: u64 = 7200; // seconds (2 hours)
+#[cfg(debug_assertions)]
+pub(crate) const TCP_MAX_LIFETIME: u64 = 600; // seconds (10 minutes)
+
+#[cfg(not(debug_assertions))]
 pub(crate) const POLL_TIMEOUT: u64 = 60; // seconds
+#[cfg(debug_assertions)]
+pub(crate) const POLL_TIMEOUT: u64 = 5; // seconds
 
 pub mod tun {
     use crate::vpn::Vpn;

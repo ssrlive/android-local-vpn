@@ -82,14 +82,14 @@ impl<'a> Processor<'a> {
             }
 
             self.clearup_expired_sessions();
-            log::debug!("sessions count={}", self.sessions.len());
+            log::trace!("sessions count={}", self.sessions.len());
         }
         Ok(())
     }
 
     fn retrieve_or_create_session(&mut self, bytes: &[u8], is_closed: &mut bool) -> crate::Result<SessionInfo> {
         let session_info = SessionInfo::new(bytes, is_closed)?;
-        if self.get_session(&session_info).is_some() {
+        if self.sessions.get(&session_info).is_some() {
             return Ok(session_info);
         }
         let token = self.generate_new_token();
@@ -103,11 +103,15 @@ impl<'a> Processor<'a> {
     fn destroy_session(&mut self, session_info: &SessionInfo) -> crate::Result<()> {
         log::trace!("destroying session, session={:?}", session_info);
 
-        // push any pending data back to tun device before destroying session.
-        self.write_to_smoltcp(session_info)?;
-        self.write_to_tun(session_info)?;
-
         if let Some(mut session) = self.sessions.remove(session_info) {
+            // push any pending data back to tun device before destroying session.
+            session.write_to_smoltcp()?;
+
+            #[cfg(target_family = "unix")]
+            session.write_to_tun(&mut self.file)?;
+            #[cfg(target_family = "windows")]
+            assert!(false, "windows not supported yet");
+
             session.destroy(&mut self.poll)?;
             self.tokens_to_sessions.remove(&session.token);
             log::debug!("destroyed session, token={:?} session={:?}", session.token, session_info);
@@ -146,29 +150,21 @@ impl<'a> Processor<'a> {
                     continue;
                 }
                 let session_info = session_info?;
-                if let Some(session) = self.get_session_mut(&session_info) {
+                if let Some(session) = self.sessions.get_mut(&session_info) {
                     session.store_tun_data(read_buffer);
-                }
 
-                self.write_to_tun(&session_info)?;
-                self.read_from_smoltcp(&session_info)?;
-                self.write_to_server(&session_info)?;
+                    #[cfg(target_family = "unix")]
+                    session.write_to_tun(&mut self.file)?;
+                    #[cfg(target_family = "windows")]
+                    assert!(false, "windows not supported yet");
 
-                if let Some(session) = self.get_session_mut(&session_info) {
+                    session.read_from_smoltcp()?;
+                    session.write_to_server()?;
+
                     // delay tcp socket close to avoid RST packet
                     session.update_expiry_timestamp(is_closed);
                 }
             }
-        }
-        Ok(())
-    }
-
-    fn write_to_tun(&mut self, session_info: &SessionInfo) -> crate::Result<()> {
-        if let Some(session) = self.sessions.get_mut(session_info) {
-            #[cfg(target_family = "unix")]
-            session.write_to_tun(&mut self.file)?;
-            #[cfg(target_family = "windows")]
-            assert!(false, "windows not supported yet");
         }
         Ok(())
     }
@@ -181,17 +177,25 @@ impl<'a> Processor<'a> {
             if event.is_readable() {
                 log::trace!("handle server event read, session={:?}", session_info);
 
-                self.read_from_server(&session_info, &mut is_closed)?;
-                self.write_to_smoltcp(&session_info)?;
-                self.write_to_tun(&session_info)?;
+                if let Some(session) = self.sessions.get_mut(&session_info) {
+                    session.read_from_server(&mut is_closed)?;
+                    session.write_to_smoltcp()?;
+
+                    #[cfg(target_family = "unix")]
+                    session.write_to_tun(&mut self.file)?;
+                    #[cfg(target_family = "windows")]
+                    assert!(false, "windows not supported yet");
+                }
             }
             if event.is_writable() {
                 log::trace!("handle server event write, session={:?}", session_info);
 
-                self.read_from_smoltcp(&session_info)?;
-                self.write_to_server(&session_info)?;
+                if let Some(session) = self.sessions.get_mut(&session_info) {
+                    session.read_from_smoltcp()?;
+                    session.write_to_server()?;
+                }
             }
-            if let Some(session) = self.get_session_mut(&session_info) {
+            if let Some(session) = self.sessions.get_mut(&session_info) {
                 let force_set = event.is_read_closed() || event.is_write_closed() || is_closed;
                 session.update_expiry_timestamp(force_set);
             }
@@ -199,44 +203,8 @@ impl<'a> Processor<'a> {
         Ok(())
     }
 
-    fn read_from_server(&mut self, session_info: &SessionInfo, is_closed: &mut bool) -> crate::Result<()> {
-        if let Some(session) = self.get_session_mut(session_info) {
-            session.read_from_server(is_closed)?;
-        }
-        Ok(())
-    }
-
-    fn write_to_server(&mut self, session_info: &SessionInfo) -> crate::Result<()> {
-        if let Some(session) = self.get_session_mut(session_info) {
-            session.write_to_server()?;
-        }
-        Ok(())
-    }
-
-    fn read_from_smoltcp(&mut self, session_info: &SessionInfo) -> crate::Result<()> {
-        if let Some(session) = self.get_session_mut(session_info) {
-            session.read_from_smoltcp()?;
-        }
-        Ok(())
-    }
-
-    fn write_to_smoltcp(&mut self, session_info: &SessionInfo) -> crate::Result<()> {
-        if let Some(session) = self.get_session_mut(session_info) {
-            session.write_to_smoltcp()?;
-        }
-        Ok(())
-    }
-
-    fn get_session_mut(&mut self, session_info: &SessionInfo) -> Option<&mut Session<'a>> {
-        self.sessions.get_mut(session_info)
-    }
-
-    fn get_session(&self, session_info: &SessionInfo) -> Option<&Session<'a>> {
-        self.sessions.get(session_info)
-    }
-
     fn is_session_expired(&self, session_info: &SessionInfo) -> bool {
-        if let Some(session) = self.get_session(session_info) {
+        if let Some(session) = self.sessions.get(session_info) {
             session.is_expired()
         } else {
             false

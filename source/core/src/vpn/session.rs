@@ -134,9 +134,10 @@ impl<'a> Session<'a> {
             }
         };
 
+        // here we can hijeck the data from server to client
+
         for bytes in read_seqs {
             if !bytes.is_empty() {
-                // here exchange the business logic data
                 let event = IncomingDataEvent {
                     direction: IncomingDirection::FromServer,
                     buffer: &bytes[..],
@@ -149,6 +150,7 @@ impl<'a> Session<'a> {
 
     pub(crate) fn write_to_server(&mut self) -> crate::Result<()> {
         log::trace!("write to server, session={:?}", self.session_info);
+        // here we can hijeck the data from client to server
         self.buffers
             .consume_data(OutgoingDirection::ToServer, |b| self.mio_socket.write(b).map_err(|e| e.into()));
         Ok(())
