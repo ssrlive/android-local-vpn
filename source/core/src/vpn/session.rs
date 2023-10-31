@@ -22,6 +22,7 @@ pub(crate) struct Session<'a> {
     device: VpnDevice,
     expiry: Option<::std::time::Instant>,
     session_info: SessionInfo,
+    lifetime: ::std::time::Instant,
 }
 
 impl<'a> Session<'a> {
@@ -45,6 +46,7 @@ impl<'a> Session<'a> {
             device,
             expiry,
             session_info: *session_info,
+            lifetime: ::std::time::Instant::now(),
         };
 
         Ok(session)
@@ -153,6 +155,7 @@ impl<'a> Session<'a> {
     }
 
     pub(crate) fn update_expiry_timestamp(&mut self, force_set: bool) {
+        self.lifetime = ::std::time::Instant::now();
         if force_set {
             self.expiry = Some(Self::generate_expiry_timestamp(crate::TCP_TIMEOUT));
         } else if let Some(expiry) = self.expiry.as_mut() {
@@ -161,6 +164,10 @@ impl<'a> Session<'a> {
     }
 
     pub(crate) fn is_expired(&self) -> bool {
+        if self.session_info.ip_protocol == IpProtocol::Tcp && self.lifetime.elapsed().as_secs() >= crate::TCP_MAX_LIFETIME {
+            // TCP session is expired if it's lifetime is greater than 2 hours.
+            return true;
+        }
         if let Some(expiry) = self.expiry {
             expiry <= ::std::time::Instant::now()
         } else {
