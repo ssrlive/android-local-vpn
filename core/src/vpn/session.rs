@@ -40,7 +40,7 @@ impl<'a> Session<'a> {
             smoltcp_socket: Self::create_smoltcp_socket(session_info, &mut sockets)?,
             mio_socket: Self::create_mio_socket(session_info, poll, token)?,
             token,
-            buffers: Self::create_buffer(session_info)?,
+            buffers: Self::create_buffer(session_info.ip_protocol)?,
             interface: Self::create_interface(&mut device)?,
             sockets,
             device,
@@ -84,7 +84,7 @@ impl<'a> Session<'a> {
                 direction: IncomingDirection::FromClient,
                 buffer: &data[..data_len],
             };
-            self.buffers.recv_data(event);
+            self.buffers.store_data(event);
         }
         Ok(())
     }
@@ -94,7 +94,7 @@ impl<'a> Session<'a> {
 
         let mut socket = self.smoltcp_socket.get(&mut self.sockets)?;
         if socket.can_send() {
-            self.buffers.consume_data(OutgoingDirection::ToClient, |b| socket.send(b));
+            self.buffers.consume_data_with_fn(OutgoingDirection::ToClient, |b| socket.send(b))?;
         }
         Ok(())
     }
@@ -142,7 +142,7 @@ impl<'a> Session<'a> {
                     direction: IncomingDirection::FromServer,
                     buffer: &bytes[..],
                 };
-                self.buffers.recv_data(event);
+                self.buffers.store_data(event);
             }
         }
         Ok(())
@@ -150,9 +150,33 @@ impl<'a> Session<'a> {
 
     pub(crate) fn write_to_server(&mut self) -> crate::Result<()> {
         log::trace!("write to server, session={:?}", self.session_info);
+
         // here we can hijeck the data from client to server
+
+        while let Some(data) = self.buffers.peek_data(OutgoingDirection::ToServer) {
+            if data.is_empty() {
+                self.buffers.consume_data(OutgoingDirection::ToServer, 0);
+                continue;
+            }
+            let mut size = 0;
+            match self.mio_socket.write(data) {
+                Ok(len) => {
+                    size = len;
+                }
+                Err(error) => {
+                    if error.kind() != std::io::ErrorKind::WouldBlock {
+                        log::error!("write to server, error={:?}", error);
+                    }
+                }
+            }
+
+            if size > 0 {
+                self.buffers.consume_data(OutgoingDirection::ToServer, size);
+            }
+        }
+
         self.buffers
-            .consume_data(OutgoingDirection::ToServer, |b| self.mio_socket.write(b).map_err(|e| e.into()));
+            .consume_data_with_fn(OutgoingDirection::ToServer, |b| self.mio_socket.write(b).map_err(|e| e.into()))?;
         Ok(())
     }
 
@@ -209,11 +233,11 @@ impl<'a> Session<'a> {
         Ok(interface)
     }
 
-    fn create_buffer(session_info: &SessionInfo) -> crate::Result<Buffers> {
-        match session_info.ip_protocol {
+    fn create_buffer(ip_protocol: IpProtocol) -> crate::Result<Buffers> {
+        match ip_protocol {
             IpProtocol::Tcp => Ok(Buffers::Tcp(TcpBuffers::new())),
             IpProtocol::Udp => Ok(Buffers::Udp(UdpBuffers::new())),
-            _ => Err(crate::Error::UnsupportedProtocol(session_info.ip_protocol)),
+            _ => Err(crate::Error::UnsupportedProtocol(ip_protocol)),
         }
     }
 

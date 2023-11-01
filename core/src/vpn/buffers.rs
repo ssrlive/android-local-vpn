@@ -6,63 +6,99 @@ pub(crate) enum Buffers {
 }
 
 impl Buffers {
-    pub(crate) fn recv_data(&mut self, event: IncomingDataEvent<'_>) {
+    pub(crate) fn store_data(&mut self, event: IncomingDataEvent<'_>) {
         match self {
-            Buffers::Tcp(tcp_buf) => tcp_buf.recv_data(event),
-            Buffers::Udp(udp_buf) => udp_buf.recv_data(event),
+            Buffers::Tcp(tcp_buf) => tcp_buf.store_data(event),
+            Buffers::Udp(udp_buf) => udp_buf.store_data(event),
         }
     }
 
-    pub(crate) fn consume_data<F>(&mut self, direction: OutgoingDirection, mut consume_fn: F)
+    pub(crate) fn peek_data(&mut self, direction: OutgoingDirection) -> Option<&[u8]> {
+        match self {
+            Buffers::Tcp(tcp_buf) => {
+                let data = tcp_buf.peek_data(direction);
+                if data.is_empty() {
+                    None
+                } else {
+                    Some(data)
+                }
+            }
+            Buffers::Udp(udp_buf) => udp_buf.peek_data(direction).get(0).map(|x| &x[..]),
+        }
+    }
+
+    pub(crate) fn consume_data(&mut self, direction: OutgoingDirection, size: usize) {
+        match self {
+            Buffers::Tcp(tcp_buf) => tcp_buf.consume_data(direction, size),
+            Buffers::Udp(udp_buf) => {
+                if let Some(x) = udp_buf.peek_data(direction).get(0) {
+                    assert_eq!(x.len(), size);
+                    udp_buf.consume_data(direction, 1);
+                } else {
+                    log::error!("no udp packet to consume");
+                }
+            }
+        }
+    }
+
+    pub(crate) fn consume_data_with_fn<F>(&mut self, direction: OutgoingDirection, mut consume_fn: F) -> crate::Result<()>
     where
         F: FnMut(&[u8]) -> crate::Result<usize>,
     {
         match self {
             Buffers::Tcp(tcp_buf) => {
-                let buffer = tcp_buf.peek_data(&direction).to_vec();
-                match consume_fn(&buffer[..]) {
+                let buffer = tcp_buf.peek_data(direction);
+                if buffer.is_empty() {
+                    return Ok(());
+                }
+                match consume_fn(buffer) {
                     Ok(consumed) => {
-                        tcp_buf.consume_data(&direction, consumed);
+                        tcp_buf.consume_data(direction, consumed);
                     }
                     Err(error) => match error {
                         crate::Error::Io(error) if error.kind() == ErrorKind::WouldBlock => {
-                            log::trace!("failed to write tcp, direction: {:?}, error={:?}", direction, error);
+                            log::trace!("write tcp, direction: {:?}, error={:?}", direction, error);
                         }
                         _ => {
-                            log::error!("failed to write tcp, direction: {:?}, error={:?}", direction, error);
+                            log::error!("write tcp, direction: {:?}, error={:?}", direction, error);
                         }
                     },
                 }
             }
             Buffers::Udp(udp_buf) => {
-                let all_datagrams = udp_buf.peek_data(&direction);
+                let all_datagrams = udp_buf.peek_data(direction);
                 let mut consumed: usize = 0;
                 // write udp packets one by one
                 for datagram in all_datagrams {
+                    if datagram.is_empty() {
+                        consumed += 1;
+                        continue;
+                    }
                     if let Err(error) = consume_fn(&datagram[..]) {
                         match error {
                             crate::Error::Io(error) => {
                                 if error.kind() == ErrorKind::WouldBlock {
-                                    log::trace!("failed to write udp, direction: {:?}, error={:?}", direction, error);
+                                    log::trace!("write udp, direction: {:?}, error={:?}", direction, error);
                                     break;
                                 } else {
-                                    log::error!("failed to write udp, direction: {:?}, error={:?}", direction, error);
+                                    log::error!("write udp, direction: {:?}, error={:?}", direction, error);
                                 }
                             }
-                            crate::Error::UdpSend(error) => {
-                                log::trace!("failed to write udp, direction: {:?}, error={:?}", direction, error);
+                            crate::Error::UdpSend(_) | crate::Error::TcpSend(_) => {
+                                log::trace!("write udp, direction: {:?}, error={:?}", direction, error);
                                 break;
                             }
                             _ => {
-                                log::error!("failed to write udp, direction: {:?}, error={:?}", direction, error);
+                                log::error!("write udp, direction: {:?}, error={:?}", direction, error);
                             }
                         }
                     }
                     consumed += 1;
                 }
-                udp_buf.consume_data(&direction, consumed);
+                udp_buf.consume_data(direction, consumed);
             }
         }
+        Ok(())
     }
 }
 
@@ -79,7 +115,7 @@ impl TcpBuffers {
         }
     }
 
-    pub(crate) fn peek_data(&mut self, direction: &OutgoingDirection) -> &[u8] {
+    pub(crate) fn peek_data(&mut self, direction: OutgoingDirection) -> &[u8] {
         let buffer = match direction {
             OutgoingDirection::ToServer => &mut self.server_buf,
             OutgoingDirection::ToClient => &mut self.client_buf,
@@ -87,7 +123,7 @@ impl TcpBuffers {
         buffer.make_contiguous()
     }
 
-    pub(crate) fn consume_data(&mut self, direction: &OutgoingDirection, size: usize) {
+    pub(crate) fn consume_data(&mut self, direction: OutgoingDirection, size: usize) {
         let buffer = match direction {
             OutgoingDirection::ToServer => &mut self.server_buf,
             OutgoingDirection::ToClient => &mut self.client_buf,
@@ -95,7 +131,7 @@ impl TcpBuffers {
         buffer.drain(0..size);
     }
 
-    pub(crate) fn recv_data(&mut self, event: IncomingDataEvent<'_>) {
+    pub(crate) fn store_data(&mut self, event: IncomingDataEvent<'_>) {
         match event.direction {
             IncomingDirection::FromServer => {
                 self.client_buf.extend(event.buffer.iter());
@@ -120,7 +156,7 @@ impl UdpBuffers {
         }
     }
 
-    pub(crate) fn peek_data(&mut self, direction: &OutgoingDirection) -> &[Vec<u8>] {
+    pub(crate) fn peek_data(&mut self, direction: OutgoingDirection) -> &[Vec<u8>] {
         let buffer = match direction {
             OutgoingDirection::ToServer => &mut self.server_buf,
             OutgoingDirection::ToClient => &mut self.client_buf,
@@ -128,7 +164,7 @@ impl UdpBuffers {
         buffer.make_contiguous()
     }
 
-    pub(crate) fn consume_data(&mut self, direction: &OutgoingDirection, size: usize) {
+    pub(crate) fn consume_data(&mut self, direction: OutgoingDirection, size: usize) {
         let buffer = match direction {
             OutgoingDirection::ToServer => &mut self.server_buf,
             OutgoingDirection::ToClient => &mut self.client_buf,
@@ -136,7 +172,7 @@ impl UdpBuffers {
         buffer.drain(0..size);
     }
 
-    pub(crate) fn recv_data(&mut self, event: IncomingDataEvent<'_>) {
+    pub(crate) fn store_data(&mut self, event: IncomingDataEvent<'_>) {
         match event.direction {
             IncomingDirection::FromServer => self.client_buf.push_back(event.buffer.to_vec()),
             IncomingDirection::FromClient => self.server_buf.push_back(event.buffer.to_vec()),
