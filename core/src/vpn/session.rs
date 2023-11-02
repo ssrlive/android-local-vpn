@@ -1,8 +1,8 @@
 use crate::vpn::{
     buffers::{Buffers, IncomingDataEvent, IncomingDirection, OutgoingDirection, TcpBuffers, UdpBuffers},
-    mio_socket::Socket as MioSocket,
+    mio_socket,
     session_info::SessionInfo,
-    smoltcp_socket::Socket as SmoltcpSocket,
+    smoltcp_socket,
     vpn_device::VpnDevice,
 };
 use mio::{Poll, Token};
@@ -14,8 +14,8 @@ use smoltcp::{
 
 pub(crate) struct Session<'a> {
     pub(crate) token: Token,
-    smoltcp_socket: SmoltcpSocket,
-    mio_socket: MioSocket,
+    smoltcp_socket: smoltcp_socket::Socket,
+    mio_socket: mio_socket::Socket,
     buffers: Buffers,
     interface: Interface,
     sockets: SocketSet<'a>,
@@ -199,12 +199,12 @@ impl<'a> Session<'a> {
         }
     }
 
-    fn create_smoltcp_socket(info: &SessionInfo, sockets: &mut SocketSet<'_>) -> crate::Result<SmoltcpSocket> {
-        SmoltcpSocket::new(info.ip_protocol, info.source, info.destination, sockets)
+    fn create_smoltcp_socket(info: &SessionInfo, sockets: &mut SocketSet<'_>) -> crate::Result<smoltcp_socket::Socket> {
+        smoltcp_socket::Socket::new(info.ip_protocol, info.source, info.destination, sockets)
     }
 
-    fn create_mio_socket(info: &SessionInfo, poll: &mut Poll, token: Token) -> std::io::Result<MioSocket> {
-        let mut mio_socket = MioSocket::new(info.ip_protocol, info.ip_version, info.destination)?;
+    fn create_mio_socket(info: &SessionInfo, poll: &mut Poll, token: Token) -> std::io::Result<mio_socket::Socket> {
+        let mut mio_socket = mio_socket::Socket::new(info.ip_protocol, info.ip_version, info.destination)?;
 
         if let Err(error) = mio_socket.register_poll(poll, token) {
             log::error!("failed to register poll, error={:?}", error);
