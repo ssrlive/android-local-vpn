@@ -153,10 +153,10 @@ impl<'a> Session<'a> {
 
         // here we can hijeck the data from client to server
 
-        while let Some(data) = self.buffers.peek_data(OutgoingDirection::ToServer) {
+        if let Some(data) = self.buffers.peek_data(OutgoingDirection::ToServer) {
             if data.is_empty() {
                 self.buffers.consume_data(OutgoingDirection::ToServer, 0);
-                continue;
+                return Ok(());
             }
             let mut size = 0;
             match self.mio_socket.write(data) {
@@ -170,9 +170,7 @@ impl<'a> Session<'a> {
                 }
             }
 
-            if size > 0 {
-                self.buffers.consume_data(OutgoingDirection::ToServer, size);
-            }
+            self.buffers.consume_data(OutgoingDirection::ToServer, size);
         }
 
         self.buffers
