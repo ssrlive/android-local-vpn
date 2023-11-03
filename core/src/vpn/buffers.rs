@@ -76,22 +76,14 @@ impl Buffers {
                     }
                     if let Err(error) = consume_fn(&datagram[..]) {
                         match error {
-                            crate::Error::Io(error) => {
-                                if error.kind() == ErrorKind::WouldBlock {
-                                    log::trace!("write udp, direction: {:?}, error={:?}", direction, error);
-                                    break;
-                                } else {
-                                    log::error!("write udp, direction: {:?}, error={:?}", direction, error);
-                                }
-                            }
-                            crate::Error::UdpSend(_) | crate::Error::TcpSend(_) => {
+                            crate::Error::Io(error) if error.kind() == ErrorKind::WouldBlock => {
                                 log::trace!("write udp, direction: {:?}, error={:?}", direction, error);
-                                break;
                             }
                             _ => {
                                 log::error!("write udp, direction: {:?}, error={:?}", direction, error);
                             }
                         }
+                        break;
                     }
                     consumed += 1;
                 }
