@@ -72,10 +72,13 @@ impl Socket {
         }
     }
 
-    pub(crate) fn read(&mut self, is_closed: &mut bool) -> std::io::Result<Vec<Vec<u8>>> {
+    pub(crate) fn read<F>(&mut self, is_closed: &mut bool, callback: F) -> std::io::Result<()>
+    where
+        F: FnMut(&mut [u8]) -> std::io::Result<()>,
+    {
         match &mut self.connection {
-            Connection::Tcp(connection) => Self::read_all(connection, is_closed),
-            Connection::Udp(connection) => Self::read_all(connection, is_closed),
+            Connection::Tcp(connection) => Self::read_all(connection, is_closed, callback),
+            Connection::Udp(connection) => Self::read_all(connection, is_closed, callback),
         }
     }
 
@@ -149,12 +152,12 @@ impl Socket {
         }
     }
 
-    fn read_all<R>(reader: &mut R, is_closed: &mut bool) -> std::io::Result<Vec<Vec<u8>>>
+    fn read_all<R, F>(reader: &mut R, is_closed: &mut bool, mut callback: F) -> std::io::Result<()>
     where
         R: Reader,
+        F: FnMut(&mut [u8]) -> std::io::Result<()>,
     {
-        let mut bytes: Vec<Vec<u8>> = Vec::new();
-        let mut buffer = [0; 1 << 16]; // maximum UDP packet size
+        let mut buffer = [0; crate::MAX_PACKET_SIZE]; // maximum UDP packet size
         loop {
             match reader.read(&mut buffer[..]) {
                 Ok(count) => {
@@ -162,20 +165,19 @@ impl Socket {
                         *is_closed = true;
                         break;
                     }
-                    // bytes.extend_from_slice(&buffer[..count]);
-                    let data = buffer[..count].to_vec();
-                    bytes.push(data)
+                    callback(&mut buffer[..count])?;
                 }
                 Err(err) => {
                     if err.kind() == std::io::ErrorKind::WouldBlock {
                         break;
                     } else {
+                        *is_closed = true;
                         return Err(err);
                     }
                 }
             }
         }
-        Ok(bytes)
+        Ok(())
     }
 }
 

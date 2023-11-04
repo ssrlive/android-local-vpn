@@ -123,14 +123,15 @@ impl<'a> Session<'a> {
 
     pub(crate) fn read_from_server(&mut self, is_closed: &mut bool) -> crate::Result<()> {
         log::trace!("read from server, session={:?}", self.session_info);
-        let read_seqs = match self.mio_socket.read(is_closed) {
-            Ok(result) => result,
-            Err(error) => {
-                assert_ne!(error.kind(), std::io::ErrorKind::WouldBlock);
-                if error.kind() != std::io::ErrorKind::ConnectionReset {
-                    log::error!("failed to read from tcp stream, error={:?}", error);
-                }
-                vec![]
+        let mut read_seqs = Vec::new();
+        let error = self.mio_socket.read(is_closed, |bytes| {
+            read_seqs.push(bytes.to_vec());
+            Ok(())
+        });
+        if let Err(error) = error {
+            assert_ne!(error.kind(), std::io::ErrorKind::WouldBlock);
+            if error.kind() != std::io::ErrorKind::ConnectionReset {
+                log::error!("failed to read from tcp stream, error={:?}", error);
             }
         };
 
@@ -153,6 +154,7 @@ impl<'a> Session<'a> {
 
         // here we can hijeck the data from client to server
 
+        /*
         if let Some(data) = self.buffers.peek_data(OutgoingDirection::ToServer) {
             if data.is_empty() {
                 self.buffers.consume_data(OutgoingDirection::ToServer, 0);
@@ -172,6 +174,7 @@ impl<'a> Session<'a> {
 
             self.buffers.consume_data(OutgoingDirection::ToServer, size);
         }
+        // */
 
         self.buffers
             .consume_data_with_fn(OutgoingDirection::ToServer, |b| self.mio_socket.write(b).map_err(|e| e.into()))?;
