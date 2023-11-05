@@ -23,7 +23,7 @@ fn main() {
     use env_logger::Env;
     use smoltcp::phy::{Medium, TunTapInterface};
 
-    let environment = Env::default().default_filter_or("info");
+    let environment = Env::default().default_filter_or("tuncore=info");
     env_logger::Builder::from_env(environment).init();
 
     let args = Args::parse();
@@ -40,8 +40,20 @@ fn main() {
             tuncore::tun::create();
             tuncore::tun::start(tun.as_raw_fd());
 
+            /*
             println!("Press any key to exit");
             std::io::stdin().read_line(&mut String::new()).unwrap();
+            // */
+
+            let (tx, rx) = std::sync::mpsc::channel();
+            let handle = ctrlc2::set_handler(move || {
+                tx.send(()).expect("Could not send signal on channel.");
+                true
+            })
+            .expect("Error setting Ctrl-C handler");
+            println!("Press Ctrl-C to exit");
+            rx.recv().expect("Could not receive from channel.");
+            handle.join().unwrap();
 
             tuncore::tun::stop();
             tuncore::tun::destroy();

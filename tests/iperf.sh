@@ -39,6 +39,7 @@ ip tuntap add name tun0 mode tun
 ip link set tun0 up
 ip route add 10.0.0.4 dev tun0
 
+export RUST_LOG=tuncore=info
 # "${testapp}" --tun tun0 --out veth0 &
 
 # Run iperf client through testapp

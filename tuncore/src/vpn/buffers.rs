@@ -13,6 +13,7 @@ impl Buffers {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn peek_data(&mut self, direction: OutgoingDirection) -> Option<&[u8]> {
         match self {
             Buffers::Tcp(tcp_buf) => {
@@ -27,6 +28,7 @@ impl Buffers {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn consume_data(&mut self, direction: OutgoingDirection, size: usize) {
         match self {
             Buffers::Tcp(tcp_buf) => tcp_buf.consume_data(direction, size),
