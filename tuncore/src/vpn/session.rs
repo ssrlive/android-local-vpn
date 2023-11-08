@@ -185,7 +185,7 @@ impl<'a> Session<'a> {
                 }
                 Err(error) => {
                     if error.kind() != std::io::ErrorKind::WouldBlock {
-                        log::error!("write to server, error={:?}", error);
+                        log::debug!("write to server, error={:?}", error);
                     }
                 }
             }
@@ -198,7 +198,7 @@ impl<'a> Session<'a> {
             .buffers
             .consume_data_with_fn(OutgoingDirection::ToServer, |b| self.mio_socket.write(b).map_err(|e| e.into()));
         if let Err(error) = result {
-            log::error!("write to server, {:?} error={:?}", self.token, error);
+            log::debug!("write to server, {:?} error={:?}", self.token, error);
             *is_closed = true;
         }
         Ok(())
