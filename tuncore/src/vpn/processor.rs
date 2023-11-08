@@ -27,6 +27,8 @@ pub(crate) struct Processor<'a> {
     sessions: Sessions<'a>,
     tokens_to_sessions: TokensToSessions,
     next_token_id: usize,
+    waker: Option<std::sync::Arc<::mio::Waker>>,
+    exit_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl<'a> Processor<'a> {
@@ -40,11 +42,25 @@ impl<'a> Processor<'a> {
             sessions: Sessions::new(),
             tokens_to_sessions: TokensToSessions::new(),
             next_token_id: TOKEN_START_ID,
+            waker: None,
+            exit_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         })
     }
 
-    pub(crate) fn new_stop_waker(&self) -> std::io::Result<Waker> {
-        Waker::new(self.poll.registry(), TOKEN_WAKER)
+    pub(crate) fn exit_flag(&self) -> std::sync::Arc<std::sync::atomic::AtomicBool> {
+        self.exit_flag.clone()
+    }
+
+    pub(crate) fn new_stop_waker(&mut self) -> std::io::Result<std::sync::Arc<Waker>> {
+        self.create_stop_waker()?;
+        Ok(self.waker.clone().unwrap())
+    }
+
+    fn create_stop_waker(&mut self) -> std::io::Result<()> {
+        if self.waker.is_none() {
+            self.waker = Some(std::sync::Arc::new(Waker::new(self.poll.registry(), TOKEN_WAKER)?));
+        }
+        Ok(())
     }
 
     fn generate_new_token(&mut self) -> Token {
@@ -63,6 +79,8 @@ impl<'a> Processor<'a> {
         let mut events = Events::with_capacity(EVENTS_CAPACITY);
         let timeout = Some(std::time::Duration::from_secs(crate::POLL_TIMEOUT));
 
+        self.create_stop_waker()?;
+
         'poll_loop: loop {
             if let Err(e) = self.poll.poll(&mut events, timeout) {
                 log::debug!("failed to poll, error={:?}", e);
@@ -74,8 +92,10 @@ impl<'a> Processor<'a> {
                 if event.token() == TOKEN_TUN {
                     self.handle_tun_event(event)?;
                 } else if event.token() == TOKEN_WAKER {
-                    log::info!("stopping vpn");
-                    break 'poll_loop;
+                    if self.exit_flag.load(std::sync::atomic::Ordering::Relaxed) {
+                        log::info!("stopping vpn");
+                        break 'poll_loop;
+                    }
                 } else {
                     self.handle_server_event(event)?;
                 }
