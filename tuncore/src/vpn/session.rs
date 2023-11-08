@@ -167,7 +167,7 @@ impl<'a> Session<'a> {
         Ok(())
     }
 
-    pub(crate) fn write_to_server(&mut self) -> crate::Result<()> {
+    pub(crate) fn write_to_server(&mut self, is_closed: &mut bool) -> crate::Result<()> {
         log::trace!("write to server, session={:?}", self.session_info);
 
         // here we can hijeck the data from client to server
@@ -194,8 +194,13 @@ impl<'a> Session<'a> {
         }
         // */
 
-        self.buffers
-            .consume_data_with_fn(OutgoingDirection::ToServer, |b| self.mio_socket.write(b).map_err(|e| e.into()))?;
+        let result = self
+            .buffers
+            .consume_data_with_fn(OutgoingDirection::ToServer, |b| self.mio_socket.write(b).map_err(|e| e.into()));
+        if let Err(error) = result {
+            log::error!("write to server, {:?} error={:?}", self.token, error);
+            *is_closed = true;
+        }
         Ok(())
     }
 

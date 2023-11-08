@@ -188,7 +188,7 @@ impl<'a> Processor<'a> {
                     assert!(false, "windows not supported yet");
 
                     session.read_from_smoltcp()?;
-                    session.write_to_server()?;
+                    session.write_to_server(&mut is_closed)?;
 
                     // delay tcp socket close to avoid RST packet
                     session.update_expiry_timestamp(is_closed);
@@ -256,7 +256,7 @@ impl<'a> Processor<'a> {
 
                 if let Some(session) = self.sessions.get_mut(&session_info) {
                     session.read_from_smoltcp()?;
-                    session.write_to_server()?;
+                    session.write_to_server(&mut is_closed)?;
                 }
             }
             if let Some(session) = self.sessions.get_mut(&session_info) {
