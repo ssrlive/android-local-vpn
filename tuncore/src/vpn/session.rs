@@ -128,7 +128,7 @@ impl<'a> Session<'a> {
     }
 
     pub(crate) fn read_from_server(&mut self, is_closed: &mut bool) -> crate::Result<()> {
-        log::info!("read from server, session={:?}", self.session_info);
+        log::trace!("read from server, session={:?}", self.session_info);
         let mut read_seqs = Vec::new();
         self.continue_read = false;
         let error = self.mio_socket.read(is_closed, |bytes| {
@@ -136,7 +136,7 @@ impl<'a> Session<'a> {
 
             let len = read_seqs.iter().map(|b| b.len()).sum::<usize>();
 
-            log::info!("read from server, {:?}, bytes={}", self.token, len);
+            log::trace!("read from server, {:?}, bytes={}", self.token, len);
             if len >= crate::MAX_PACKET_SIZE {
                 return Err(std::io::Error::new(std::io::ErrorKind::OutOfMemory, "read buffer is full"));
             }
@@ -148,7 +148,7 @@ impl<'a> Session<'a> {
                 log::error!("failed to read from tcp stream, error={:?}", error);
             }
             if error.kind() == std::io::ErrorKind::OutOfMemory {
-                log::info!("read buffer is full, session={:?}", self.session_info);
+                log::trace!("read buffer is full, {:?} session={:?}", self.token, self.session_info);
                 self.continue_read = true;
             }
         };
