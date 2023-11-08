@@ -5,7 +5,7 @@ use mio::{event::Event, Events, Interest, Token, Waker};
 #[cfg(target_family = "unix")]
 use std::os::unix::io::FromRawFd;
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::HashMap,
     io::{ErrorKind, Read},
 };
 
@@ -27,7 +27,6 @@ pub(crate) struct Processor<'a> {
     sessions: Sessions<'a>,
     tokens_to_sessions: TokensToSessions,
     next_token_id: usize,
-    readable_session: VecDeque<SessionInfo>,
     waker: Option<std::sync::Arc<::mio::Waker>>,
     exit_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
@@ -43,7 +42,6 @@ impl<'a> Processor<'a> {
             sessions: Sessions::new(),
             tokens_to_sessions: TokensToSessions::new(),
             next_token_id: TOKEN_START_ID,
-            readable_session: VecDeque::new(),
             waker: None,
             exit_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         })
@@ -76,7 +74,7 @@ impl<'a> Processor<'a> {
         #[cfg(target_family = "unix")]
         let registry = self.poll.registry();
         #[cfg(target_family = "unix")]
-        registry.register(&mut SourceFd(&self.file_descriptor), TOKEN_TUN, Interest::READABLE)?;
+        registry.register(&mut SourceFd(&self.file_descriptor), TOKEN_TUN, Interest::READABLE | Interest::WRITABLE)?;
 
         let mut events = Events::with_capacity(EVENTS_CAPACITY);
         let timeout = Some(std::time::Duration::from_secs(crate::POLL_TIMEOUT));
@@ -97,13 +95,6 @@ impl<'a> Processor<'a> {
                     if self.exit_flag.load(std::sync::atomic::Ordering::Relaxed) {
                         log::info!("stopping vpn");
                         break 'poll_loop;
-                    }
-
-                    if let Some(session_info) = self.readable_session.pop_front() {
-                        log::info!("continue read, session={:?}", session_info);
-                        self.handle_server_continue_read(session_info)?;
-                    } else {
-                        log::info!("============= no readable session ==============");
                     }
                 } else {
                     self.handle_server_event(event)?;
@@ -195,14 +186,26 @@ impl<'a> Processor<'a> {
                 }
             }
         }
+        if event.is_writable() {
+            let info = self.tokens_to_sessions.values().find(|session_info| {
+                if let Some(session) = self.sessions.get_mut(session_info) {
+                    session.continue_read()
+                } else {
+                    false
+                }
+            });
+            if let Some(session_info) = info.cloned() {
+                let mut is_closed = false;
+                self.read_server_n_write_client(session_info, &mut is_closed)?;
+            }
+        }
         Ok(())
     }
 
-    fn handle_server_continue_read(&mut self, session_info: SessionInfo) -> crate::Result<()> {
+    fn read_server_n_write_client(&mut self, session_info: SessionInfo, is_closed: &mut bool) -> crate::Result<()> {
         if let Some(session) = self.sessions.get_mut(&session_info) {
-            assert!(session.continue_read());
-            let mut is_closed = false;
-            session.read_from_server(&mut is_closed)?;
+            let mut _is_closed = false;
+            session.read_from_server(&mut _is_closed)?;
             session.write_to_smoltcp()?;
 
             #[cfg(target_family = "unix")]
@@ -210,16 +213,8 @@ impl<'a> Processor<'a> {
             #[cfg(target_family = "windows")]
             assert!(false, "windows not supported yet");
 
-            if session.continue_read() {
-                self.readable_session.push_back(session_info);
-                let waker = self.waker.clone().unwrap();
-                let handle = std::thread::spawn(move || {
-                    waker.wake().unwrap();
-                });
-                handle.join().unwrap();
-            }
-
-            session.update_expiry_timestamp(is_closed);
+            session.update_expiry_timestamp(_is_closed);
+            *is_closed = _is_closed;
         }
         Ok(())
     }
@@ -232,24 +227,7 @@ impl<'a> Processor<'a> {
             if event.is_readable() {
                 log::trace!("handle server event read, session={:?}", session_info);
 
-                if let Some(session) = self.sessions.get_mut(&session_info) {
-                    session.read_from_server(&mut is_closed)?;
-                    session.write_to_smoltcp()?;
-
-                    #[cfg(target_family = "unix")]
-                    session.write_to_tun(&mut self.file)?;
-                    #[cfg(target_family = "windows")]
-                    assert!(false, "windows not supported yet");
-
-                    if session.continue_read() {
-                        self.readable_session.push_back(session_info);
-                        let waker = self.waker.clone().unwrap();
-                        let handle = std::thread::spawn(move || {
-                            waker.wake().unwrap();
-                        });
-                        handle.join().unwrap();
-                    }
-                }
+                self.read_server_n_write_client(session_info, &mut is_closed)?;
             }
             if event.is_writable() {
                 log::trace!("handle server event write, session={:?}", session_info);
