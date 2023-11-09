@@ -47,6 +47,7 @@ impl Buffers {
     where
         F: FnMut(&[u8]) -> crate::Result<usize>,
     {
+        let mut result = Ok(());
         match self {
             Buffers::Tcp(tcp_buf) => {
                 let buffer = tcp_buf.peek_data(direction);
@@ -58,11 +59,9 @@ impl Buffers {
                         tcp_buf.consume_data(direction, consumed);
                     }
                     Err(error) => match error {
-                        crate::Error::Io(error) if error.kind() == ErrorKind::WouldBlock => {
-                            log::trace!("write tcp, direction: {:?}, error={:?}", direction, error);
-                        }
+                        crate::Error::Io(error) if error.kind() == ErrorKind::WouldBlock => {}
                         _ => {
-                            log::error!("write tcp, direction: {:?}, error={:?}", direction, error);
+                            result = Err(error);
                         }
                     },
                 }
@@ -78,11 +77,9 @@ impl Buffers {
                     }
                     if let Err(error) = consume_fn(&datagram[..]) {
                         match error {
-                            crate::Error::Io(error) if error.kind() == ErrorKind::WouldBlock => {
-                                log::trace!("write udp, direction: {:?}, error={:?}", direction, error);
-                            }
+                            crate::Error::Io(error) if error.kind() == ErrorKind::WouldBlock => {}
                             _ => {
-                                log::error!("write udp, direction: {:?}, error={:?}", direction, error);
+                                result = Err(error);
                             }
                         }
                         break;
@@ -92,7 +89,7 @@ impl Buffers {
                 udp_buf.consume_data(direction, consumed);
             }
         }
-        Ok(())
+        result
     }
 }
 

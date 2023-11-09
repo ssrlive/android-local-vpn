@@ -74,7 +74,7 @@ impl<'a> Processor<'a> {
         #[cfg(target_family = "unix")]
         let registry = self.poll.registry();
         #[cfg(target_family = "unix")]
-        registry.register(&mut SourceFd(&self.file_descriptor), TOKEN_TUN, Interest::READABLE)?;
+        registry.register(&mut SourceFd(&self.file_descriptor), TOKEN_TUN, Interest::READABLE | Interest::WRITABLE)?;
 
         let mut events = Events::with_capacity(EVENTS_CAPACITY);
         let timeout = Some(std::time::Duration::from_secs(crate::POLL_TIMEOUT));
@@ -179,12 +179,42 @@ impl<'a> Processor<'a> {
                     assert!(false, "windows not supported yet");
 
                     session.read_from_smoltcp()?;
-                    session.write_to_server()?;
+                    session.write_to_server(&mut is_closed)?;
 
                     // delay tcp socket close to avoid RST packet
                     session.update_expiry_timestamp(is_closed);
                 }
             }
+        }
+        if event.is_writable() {
+            let info = self.tokens_to_sessions.values().find(|session_info| {
+                if let Some(session) = self.sessions.get_mut(session_info) {
+                    session.continue_read()
+                } else {
+                    false
+                }
+            });
+            if let Some(session_info) = info.cloned() {
+                let mut is_closed = false;
+                self.read_server_n_write_client(session_info, &mut is_closed)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn read_server_n_write_client(&mut self, session_info: SessionInfo, is_closed: &mut bool) -> crate::Result<()> {
+        if let Some(session) = self.sessions.get_mut(&session_info) {
+            let mut _is_closed = false;
+            session.read_from_server(&mut _is_closed)?;
+            session.write_to_smoltcp()?;
+
+            #[cfg(target_family = "unix")]
+            session.write_to_tun(&mut self.file)?;
+            #[cfg(target_family = "windows")]
+            assert!(false, "windows not supported yet");
+
+            session.update_expiry_timestamp(_is_closed);
+            *is_closed = _is_closed;
         }
         Ok(())
     }
@@ -197,22 +227,14 @@ impl<'a> Processor<'a> {
             if event.is_readable() {
                 log::trace!("handle server event read, session={:?}", session_info);
 
-                if let Some(session) = self.sessions.get_mut(&session_info) {
-                    session.read_from_server(&mut is_closed)?;
-                    session.write_to_smoltcp()?;
-
-                    #[cfg(target_family = "unix")]
-                    session.write_to_tun(&mut self.file)?;
-                    #[cfg(target_family = "windows")]
-                    assert!(false, "windows not supported yet");
-                }
+                self.read_server_n_write_client(session_info, &mut is_closed)?;
             }
             if event.is_writable() {
                 log::trace!("handle server event write, session={:?}", session_info);
 
                 if let Some(session) = self.sessions.get_mut(&session_info) {
                     session.read_from_smoltcp()?;
-                    session.write_to_server()?;
+                    session.write_to_server(&mut is_closed)?;
                 }
             }
             if let Some(session) = self.sessions.get_mut(&session_info) {

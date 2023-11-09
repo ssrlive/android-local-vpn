@@ -23,6 +23,7 @@ pub(crate) struct Session<'a> {
     expiry: Option<::std::time::Instant>,
     session_info: SessionInfo,
     lifetime: ::std::time::Instant,
+    continue_read: bool,
 }
 
 impl<'a> Session<'a> {
@@ -47,9 +48,14 @@ impl<'a> Session<'a> {
             expiry,
             session_info: *session_info,
             lifetime: ::std::time::Instant::now(),
+            continue_read: false,
         };
 
         Ok(session)
+    }
+
+    pub(crate) fn continue_read(&self) -> bool {
+        self.continue_read
     }
 
     pub(crate) fn destroy(&mut self, poll: &mut Poll) -> crate::Result<()> {
@@ -124,14 +130,26 @@ impl<'a> Session<'a> {
     pub(crate) fn read_from_server(&mut self, is_closed: &mut bool) -> crate::Result<()> {
         log::trace!("read from server, session={:?}", self.session_info);
         let mut read_seqs = Vec::new();
+        self.continue_read = false;
         let error = self.mio_socket.read(is_closed, |bytes| {
             read_seqs.push(bytes.to_vec());
+
+            let len = read_seqs.iter().map(|b| b.len()).sum::<usize>();
+
+            log::trace!("read from server, {:?}, bytes={}", self.token, len);
+            if len >= crate::MAX_PACKET_SIZE {
+                return Err(std::io::Error::new(std::io::ErrorKind::OutOfMemory, "read buffer is full"));
+            }
             Ok(())
         });
         if let Err(error) = error {
             assert_ne!(error.kind(), std::io::ErrorKind::WouldBlock);
-            if error.kind() != std::io::ErrorKind::ConnectionReset {
+            if error.kind() != std::io::ErrorKind::ConnectionReset && error.kind() != std::io::ErrorKind::OutOfMemory {
                 log::error!("failed to read from tcp stream, error={:?}", error);
+            }
+            if error.kind() == std::io::ErrorKind::OutOfMemory {
+                log::trace!("read buffer is full, {:?} session={:?}", self.token, self.session_info);
+                self.continue_read = true;
             }
         };
 
@@ -149,7 +167,7 @@ impl<'a> Session<'a> {
         Ok(())
     }
 
-    pub(crate) fn write_to_server(&mut self) -> crate::Result<()> {
+    pub(crate) fn write_to_server(&mut self, is_closed: &mut bool) -> crate::Result<()> {
         log::trace!("write to server, session={:?}", self.session_info);
 
         // here we can hijeck the data from client to server
@@ -167,7 +185,7 @@ impl<'a> Session<'a> {
                 }
                 Err(error) => {
                     if error.kind() != std::io::ErrorKind::WouldBlock {
-                        log::error!("write to server, error={:?}", error);
+                        log::debug!("write to server, error={:?}", error);
                     }
                 }
             }
@@ -176,8 +194,13 @@ impl<'a> Session<'a> {
         }
         // */
 
-        self.buffers
-            .consume_data_with_fn(OutgoingDirection::ToServer, |b| self.mio_socket.write(b).map_err(|e| e.into()))?;
+        let result = self
+            .buffers
+            .consume_data_with_fn(OutgoingDirection::ToServer, |b| self.mio_socket.write(b).map_err(|e| e.into()));
+        if let Err(error) = result {
+            log::debug!("write to server, {:?} error={:?}", self.token, error);
+            *is_closed = true;
+        }
         Ok(())
     }
 

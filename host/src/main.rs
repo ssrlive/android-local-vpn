@@ -1,4 +1,3 @@
-use clap::Parser;
 use std::ffi::CString;
 #[cfg(target_os = "linux")]
 use std::os::unix::io::{AsRawFd, RawFd};
@@ -6,7 +5,7 @@ use std::os::unix::io::{AsRawFd, RawFd};
 static OUT_INTERFACE: std::sync::OnceLock<CString> = std::sync::OnceLock::new();
 
 /// Tunnel traffic through sockets.
-#[derive(Parser, Debug)]
+#[derive(::clap::Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Name of the tun interface.
@@ -26,7 +25,7 @@ fn main() {
     let environment = Env::default().default_filter_or("tuncore=info");
     env_logger::Builder::from_env(environment).init();
 
-    let args = Args::parse();
+    let args = <Args as ::clap::Parser>::parse();
 
     OUT_INTERFACE.set(CString::new(args.out).unwrap()).unwrap();
 
