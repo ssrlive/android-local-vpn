@@ -4,7 +4,7 @@
 # sudo sh -c "pkill main; pkill iperf3; pkill danted; ip link del tun0; ip netns del test"
 
 # sudo apt install -y iperf3 dante-server
-sudo systemctl stop danted
+# sudo systemctl stop danted
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
