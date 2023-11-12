@@ -72,7 +72,7 @@ impl<'a> Session<'a> {
     }
 
     pub(crate) fn read_from_smoltcp(&mut self) -> crate::Result<()> {
-        log::trace!("read from smoltcp, session={:?}", self.session_info);
+        log::trace!("read from smoltcp, {:?}", self.session_info);
 
         let mut data = [0_u8; crate::MAX_PACKET_SIZE];
         loop {
@@ -96,7 +96,7 @@ impl<'a> Session<'a> {
     }
 
     pub(crate) fn write_to_smoltcp(&mut self) -> crate::Result<()> {
-        log::trace!("write to smoltcp, session={:?}", self.session_info);
+        log::trace!("write to smoltcp, {:?}", self.session_info);
 
         let mut socket = self.smoltcp_socket.get(&mut self.sockets)?;
         if socket.can_send() {
@@ -111,7 +111,7 @@ impl<'a> Session<'a> {
     }
 
     pub(crate) fn write_to_tun(&mut self, tun: &mut impl std::io::Write) -> crate::Result<()> {
-        log::trace!("write to tun, session={:?}", self.session_info);
+        log::trace!("write to tun, {:?}", self.session_info);
 
         // cook the packets in smoltcp framework.
         if !self.interface.poll(Instant::now(), &mut self.device, &mut self.sockets) {
@@ -128,7 +128,6 @@ impl<'a> Session<'a> {
     }
 
     pub(crate) fn read_from_server(&mut self, is_closed: &mut bool) -> crate::Result<()> {
-        log::trace!("read from server, session={:?}", self.session_info);
         let mut read_seqs = Vec::new();
         self.continue_read = false;
         let error = self.mio_socket.read(is_closed, |bytes| {
@@ -148,7 +147,7 @@ impl<'a> Session<'a> {
                 log::error!("failed to read from tcp stream, error={:?}", error);
             }
             if error.kind() == std::io::ErrorKind::OutOfMemory {
-                log::trace!("read buffer is full, {:?} session={:?}", self.token, self.session_info);
+                log::trace!("read buffer is full, {:?} {:?}", self.token, self.session_info);
                 self.continue_read = true;
             }
         };
@@ -168,7 +167,7 @@ impl<'a> Session<'a> {
     }
 
     pub(crate) fn write_to_server(&mut self, is_closed: &mut bool) -> crate::Result<()> {
-        log::trace!("write to server, session={:?}", self.session_info);
+        log::trace!("write to server, {:?} {:?}", self.token, self.session_info);
 
         // here we can hijeck the data from client to server
 

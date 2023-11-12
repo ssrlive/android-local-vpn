@@ -9,8 +9,7 @@ use std::{
     io::{ErrorKind, Read},
 };
 
-type Sessions<'a> = HashMap<SessionInfo, Session<'a>>;
-type TokensToSessions = HashMap<Token, SessionInfo>;
+type SessionHashMap<'a> = HashMap<SessionInfo, Session<'a>>;
 
 const EVENTS_CAPACITY: usize = 1024;
 
@@ -24,8 +23,7 @@ pub(crate) struct Processor<'a> {
     #[cfg(target_family = "unix")]
     file: std::fs::File,
     poll: mio::Poll,
-    sessions: Sessions<'a>,
-    tokens_to_sessions: TokensToSessions,
+    sessions: SessionHashMap<'a>,
     next_token_id: usize,
     waker: Option<std::sync::Arc<::mio::Waker>>,
     exit_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -39,8 +37,7 @@ impl<'a> Processor<'a> {
             #[cfg(target_family = "unix")]
             file: unsafe { std::fs::File::from_raw_fd(file_descriptor) },
             poll: mio::Poll::new()?,
-            sessions: Sessions::new(),
-            tokens_to_sessions: TokensToSessions::new(),
+            sessions: SessionHashMap::new(),
             next_token_id: TOKEN_START_ID,
             waker: None,
             exit_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -114,15 +111,12 @@ impl<'a> Processor<'a> {
         }
         let token = self.generate_new_token();
         let session = Session::new(&session_info, &mut self.poll, token)?;
-        self.tokens_to_sessions.insert(token, session_info);
         self.sessions.insert(session_info, session);
-        log::debug!("created session, token={:?} session={:?}", token, session_info);
+        log::debug!("created session, {:?} {:?}", token, session_info);
         Ok(session_info)
     }
 
     fn destroy_session(&mut self, session_info: &SessionInfo) -> crate::Result<()> {
-        log::trace!("destroying session, session={:?}", session_info);
-
         if let Some(mut session) = self.sessions.remove(session_info) {
             // push any pending data back to tun device before destroying session.
             session.write_to_smoltcp()?;
@@ -133,8 +127,7 @@ impl<'a> Processor<'a> {
             assert!(false, "windows not supported yet");
 
             session.destroy(&mut self.poll)?;
-            self.tokens_to_sessions.remove(&session.token);
-            log::debug!("destroyed session, token={:?} session={:?}", session.token, session_info);
+            log::debug!("destroyed session, {:?} {:?}", session.token, session_info);
         }
         Ok(())
     }
@@ -187,14 +180,8 @@ impl<'a> Processor<'a> {
             }
         }
         if event.is_writable() {
-            let info = self.tokens_to_sessions.values().find(|session_info| {
-                if let Some(session) = self.sessions.get_mut(session_info) {
-                    session.continue_read()
-                } else {
-                    false
-                }
-            });
-            if let Some(session_info) = info.cloned() {
+            let targets = self.sessions.iter().filter(|(_, s)| s.continue_read()).map(|(i, _)| *i).collect::<Vec<_>>();
+            for session_info in targets {
                 let mut is_closed = false;
                 self.read_server_n_write_client(session_info, &mut is_closed)?;
             }
@@ -220,17 +207,17 @@ impl<'a> Processor<'a> {
     }
 
     fn handle_server_event(&mut self, event: &Event) -> crate::Result<()> {
-        if let Some(session_info) = self.tokens_to_sessions.get(&event.token()) {
+        if let Some((session_info, _)) = self.sessions.iter().find(|(_, session)| session.token == event.token()) {
             let session_info = *session_info;
 
             let mut is_closed = false;
             if event.is_readable() {
-                log::trace!("handle server event read, session={:?}", session_info);
+                log::trace!("handle server event read, {:?}", session_info);
 
                 self.read_server_n_write_client(session_info, &mut is_closed)?;
             }
             if event.is_writable() {
-                log::trace!("handle server event write, session={:?}", session_info);
+                log::trace!("handle server event write, {:?}", session_info);
 
                 if let Some(session) = self.sessions.get_mut(&session_info) {
                     session.read_from_smoltcp()?;
@@ -245,21 +232,8 @@ impl<'a> Processor<'a> {
         Ok(())
     }
 
-    fn is_session_expired(&self, session_info: &SessionInfo) -> bool {
-        if let Some(session) = self.sessions.get(session_info) {
-            session.is_expired()
-        } else {
-            false
-        }
-    }
-
     fn clearup_expired_sessions(&mut self) {
-        let mut expired_sessions = vec![];
-        for session_info in self.sessions.keys() {
-            if self.is_session_expired(session_info) {
-                expired_sessions.push(*session_info);
-            }
-        }
+        let expired_sessions = self.sessions.iter().filter(|(_, s)| s.is_expired()).map(|(i, _)| *i).collect::<Vec<_>>();
         for session_info in expired_sessions {
             if let Err(error) = self.destroy_session(&session_info) {
                 log::error!("failed to destroy session, error={:?}", error);

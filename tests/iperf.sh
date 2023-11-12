@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Clean up environment
+# sudo sh -c "pkill main; pkill iperf3; pkill danted; ip link del tun0; ip netns del test"
+
 # sudo apt install -y iperf3 dante-server
 sudo systemctl stop danted
 
@@ -26,8 +29,8 @@ ip netns exec "$netns" ip link set dev veth0 up
 ip netns exec "$netns" ip addr add 127.0.0.1/8 dev lo
 ip netns exec "$netns" ip link set dev lo up
 
-echo "Starting Dante in background ..."
-ip netns exec "$netns" "$dante" -f ${SCRIPT_DIR}/dante.conf &
+# echo "Starting Dante in background ..."
+# ip netns exec "$netns" "$dante" -f ${SCRIPT_DIR}/dante.conf &
 
 # Start iperf3 server in netns
 ip netns exec "$netns" iperf3 -s -B 10.0.0.4 &
@@ -40,10 +43,10 @@ ip link set tun0 up
 ip route add 10.0.0.4 dev tun0
 
 export RUST_LOG=tuncore=info
-# "${testapp}" --tun tun0 --out veth0 &
+"${testapp}" --tun tun0 --out veth0 &
 
 # Run iperf client through testapp
-# iperf3 -c 10.0.0.4
+iperf3 -c 10.0.0.4
 
-# iperf3 -c 10.0.0.4 -R
+iperf3 -c 10.0.0.4 -R -P 10
 
