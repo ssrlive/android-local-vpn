@@ -224,9 +224,15 @@ impl<'a> Processor<'a> {
                     session.write_to_server(&mut is_closed)?;
                 }
             }
+            let force_set = event.is_read_closed() || event.is_write_closed() || is_closed;
             if let Some(session) = self.sessions.get_mut(&session_info) {
-                let force_set = event.is_read_closed() || event.is_write_closed() || is_closed;
                 session.update_expiry_timestamp(force_set);
+            }
+            if force_set {
+                // since the session is closed by server, we can destroy it immediately.
+                if let Err(error) = self.destroy_session(&session_info) {
+                    log::error!("failed to destroy session, error={:?}", error);
+                }
             }
         }
         Ok(())
