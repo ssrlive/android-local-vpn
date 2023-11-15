@@ -15,57 +15,61 @@ struct Args {
     /// Name of the output interface.
     #[arg(short, long)]
     out: String,
+
+    /// Verbosity level
+    #[arg(short, long, value_name = "level", value_enum, default_value = "info")]
+    verbosity: ArgVerbosity,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum)]
+enum ArgVerbosity {
+    Off,
+    Error,
+    Warn,
+    Info,
+    Debug,
+    Trace,
 }
 
 #[cfg(target_os = "linux")]
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     use env_logger::Env;
     use smoltcp::phy::{Medium, TunTapInterface};
 
-    let environment = Env::default().default_filter_or("tuncore=info");
-    env_logger::Builder::from_env(environment).init();
-
     let args = <Args as ::clap::Parser>::parse();
 
-    OUT_INTERFACE.set(CString::new(args.out).unwrap()).unwrap();
+    let default = format!("tuncore={:?}", args.verbosity);
+    let environment = Env::default().default_filter_or(default);
+    env_logger::Builder::from_env(environment).init();
+
+    OUT_INTERFACE.set(CString::new(args.out)?).map_err(|e| e.to_string_lossy().to_string())?;
 
     tuncore::tun_callbacks::set_socket_created_callback(Some(on_socket_created));
 
-    let tun_name = &args.tun;
-    match TunTapInterface::new(tun_name, Medium::Ip) {
-        Ok(tun) => {
-            set_panic_handler();
+    let tun = TunTapInterface::new(&args.tun, Medium::Ip)?;
 
-            tuncore::tun::create();
-            tuncore::tun::start(tun.as_raw_fd());
+    set_panic_handler();
 
-            /*
-            println!("Press any key to exit");
-            std::io::stdin().read_line(&mut String::new()).unwrap();
-            // */
+    tuncore::tun::create();
+    tuncore::tun::start(tun.as_raw_fd());
 
-            let (tx, rx) = std::sync::mpsc::channel();
-            let handle = ctrlc2::set_handler(move || {
-                tx.send(()).expect("Could not send signal on channel.");
-                true
-            })
-            .expect("Error setting Ctrl-C handler");
-            println!("Press Ctrl-C to exit");
-            rx.recv().expect("Could not receive from channel.");
-            handle.join().unwrap();
-
-            tuncore::tun::stop();
-            tuncore::tun::destroy();
-
-            remove_panic_handler();
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
-            eprintln!("failed to attach to tun {:?}; permission denied", tun_name);
-        }
-        Err(_) => {
-            eprintln!("failed to attach to tun {:?}", tun_name);
-        }
+    {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let handle = ctrlc2::set_handler(move || {
+            tx.send(()).expect("Could not send signal on channel.");
+            true
+        })?;
+        println!("Press Ctrl-C to exit");
+        rx.recv()?;
+        handle.join().expect("Couldn't join on the associated thread");
     }
+
+    tuncore::tun::stop();
+    tuncore::tun::destroy();
+    tuncore::tun_callbacks::set_socket_created_callback(None);
+
+    remove_panic_handler();
+    Ok(())
 }
 
 #[cfg(target_os = "linux")]
