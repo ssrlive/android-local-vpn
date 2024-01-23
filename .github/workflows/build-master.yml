@@ -53,7 +53,7 @@ jobs:
       run: rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
 
     - name: Set up Android NDK
-      run: $ANDROID_SDK_ROOT/tools/bin/sdkmanager --install "ndk;25.1.8937393"
+      run: $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.1.10909125"
 
     - name: Set up JDK
       uses: actions/setup-java@v3
